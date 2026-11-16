@@ -66,7 +66,8 @@ export async function withdraw(_: FormState, form: FormData): Promise<FormState>
   const all = form.get("all") === "1";
   const ngn = Number(String(form.get("amountNgn") ?? "").replace(/[^\d]/g, ""));
   const amountSats = all ? v.totals.availableSats : Math.min(ngnToSats(ngn, v.rate.ngnPerBtc), v.totals.availableSats);
-  const method = form.get("method") === "bank" ? "bank" : "lightning";
+  const m = form.get("method");
+  const method = m === "bank" || m === "test_faucet" ? m : "lightning";
   try {
     await withdrawFromCampaign({
       campaign: c,

@@ -7,7 +7,7 @@ import { StatusPill } from "@/components/ui";
 import { currentHospitalUser } from "@/lib/auth";
 import { campaignView, canWithdraw } from "@/lib/campaigns";
 import { formatDate, formatInt, formatNgn, satsToNgn, shortHash } from "@/lib/format";
-import { walletKind } from "@/lib/lightning";
+import { network, walletKind } from "@/lib/lightning";
 import { photos, unsplashUrl } from "@/lib/photos";
 import { sampleData, store } from "@/lib/store";
 import { signOut } from "./actions";
@@ -142,6 +142,7 @@ async function Hospital() {
                     ngnPerBtc={v.rate.ngnPerBtc}
                     minNgn={hospital.minWithdrawalNgn}
                     bankLabel={walletKind() === "demo" && hospital.bankName ? `${hospital.bankName} ••••${hospital.bankAccountLast4}` : null}
+                    testFaucet={network() === "mutinynet"}
                     initialKey={randomUUID()}
                   />
                 ) : (

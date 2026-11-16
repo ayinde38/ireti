@@ -302,17 +302,33 @@ export const seedSnapshots: ReserveSnapshot[] = Array.from({ length: 6 }, (_, i)
   takenAt: new Date(Date.now() - (6 - i) * 3_600_000).toISOString(),
 }));
 
-/** Loads the demo data into an empty database, in foreign-key order. */
-export async function seedInto(db: Sql) {
-  const tables: [string, object[]][] = [
-    ["hospitals", seedHospitals],
-    ["hospital_users", seedHospitalUsers],
-    ["campaigns", seedCampaigns],
-    ["donations", seedDonations],
-    ["withdrawals", seedWithdrawals],
-    ["audit_log", seedAudit],
-    ["reserve_snapshots", seedSnapshots],
-  ];
+/**
+ * Loads the demo data into an empty database, in foreign-key order.
+ * With a real wallet (even on the test network) the sample donations and
+ * payouts are left out: they were never paid into that wallet, so the
+ * reserves check would rightly report a shortfall. Every sat on the ledger
+ * is then a real payment.
+ */
+export async function seedInto(db: Sql, { withLedger }: { withLedger: boolean }) {
+  const campaigns = withLedger
+    ? seedCampaigns
+    : seedCampaigns.map((c) => (c.status === "pending_verification" ? c : { ...c, status: "live" as const }));
+  const tables: [string, object[]][] = withLedger
+    ? [
+        ["hospitals", seedHospitals],
+        ["hospital_users", seedHospitalUsers],
+        ["campaigns", campaigns],
+        ["donations", seedDonations],
+        ["withdrawals", seedWithdrawals],
+        ["audit_log", seedAudit],
+        ["reserve_snapshots", seedSnapshots],
+      ]
+    : [
+        ["hospitals", seedHospitals],
+        ["hospital_users", seedHospitalUsers],
+        ["campaigns", campaigns],
+        ["audit_log", seedAudit.filter((a) => a.action === "bill_approved")],
+      ];
   for (const [table, list] of tables) {
     for (const row of list) {
       const { text, params } = insertSql(table, row);

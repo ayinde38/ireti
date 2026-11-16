@@ -86,7 +86,8 @@ async function open(): Promise<Engine> {
   await migrate(db);
   if (!url) {
     const [{ n }] = await db.query<{ n: number }>("select count(*)::int as n from hospitals");
-    if (n === 0) await (await import("./store/seed")).seedInto(db);
+    // Sample payments only make sense with the simulated wallet (see seedInto).
+    if (n === 0) await (await import("./store/seed")).seedInto(db, { withLedger: !process.env.NWC_URL });
   }
   return db;
 }

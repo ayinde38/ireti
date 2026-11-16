@@ -8,12 +8,13 @@
  */
 import { execFileSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 
 const HUB = "http://127.0.0.1:8081";
 const PASSWORD = "ireti-mutinynet-test"; // matches infra/mutinynet/docker-compose.yml
 const COMPOSE = "infra/mutinynet/docker-compose.yml";
 const ENV_FILE = ".env.local";
+const LOCAL_DB = ".data/ireti-db";
 const FAUCET_NODE = {
   pubkey: "02465ed5be53d04fde66c9418ff14a5f2267723810176c9212b722e542dc1afb1b",
   address: "45.79.52.207",
@@ -111,7 +112,9 @@ async function main() {
   const saved = env.get("NWC_URL")?.match(/^nostr\+walletconnect:\/\/([0-9a-f]{64})/)?.[1];
   if (!saved || !walletKeys.has(saved)) env.delete("NWC_URL");
 
+  let newWallet = false;
   if (!env.get("NWC_URL")) {
+    newWallet = true;
     step("Creating Ireti's wallet connection");
     const app = await hub<{ pairingUri: string }>("/api/apps", {
       token,
@@ -130,6 +133,14 @@ async function main() {
   if (!env.get("SESSION_SECRET")) env.set("SESSION_SECRET", randomBytes(36).toString("base64"));
   writeEnv(env);
   console.log(`Saved wallet settings to ${ENV_FILE}.`);
+
+  // A new wallet starts with an empty ledger: payments recorded against the
+  // simulated or a previous wallet aren't in this one, and would show up as
+  // a reserves shortfall. The local database only holds sample data.
+  if (newWallet && existsSync(LOCAL_DB)) {
+    rmSync(LOCAL_DB, { recursive: true, force: true });
+    console.log("Reset the local database for the new wallet. If `npm run dev` is running, restart it.");
+  }
 
   step("Connecting to the Mutinynet faucet's node");
   await hub("/api/peers", { token, body: FAUCET_NODE }).catch(() => {}); // fine if already connected
@@ -150,8 +161,9 @@ async function main() {
       console.log("\n  1. Open https://faucet.mutinynet.com and sign in with GitHub.");
       console.log("  2. In \"Lightning channel\", paste this node's public key:\n");
       console.log(`     ${pubkey}\n`);
-      console.log("     Capacity: 1,000,000 sats (the max). Push amount: 500,000 so the wallet can");
-      console.log("     also pay out. Leave the host empty: this node is already connected to the faucet.");
+      console.log("     Capacity: 1,000,000 sats (the max). Push amount: 50,000, which covers the reserve");
+      console.log("     a channel must keep so payouts work (it shows as a small surplus on /transparency).");
+      console.log("     Leave the host empty: the node is already connected to the faucet.");
       console.log("  3. Wait about a minute (Mutinynet makes a block every 30 seconds), then re-run");
       console.log("     `npm run setup` to confirm.");
     }

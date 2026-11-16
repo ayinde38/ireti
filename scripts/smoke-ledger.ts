@@ -53,7 +53,8 @@ async function main() {
   assert.ok(withReceipt.receiptUploadedAt && withReceipt.receiptUrl);
   await assert.rejects(store.patchWithdrawal(w.id, { kind: "receipt", receiptUrl: null, receiptNote: "x", receiptUploadedAt: new Date().toISOString() }));
   await store.patchWithdrawal(w.id, { kind: "family_confirmed", familyConfirmedAt: new Date().toISOString() });
-  await assert.rejects(store.patchWithdrawal(w.id, { kind: "family_confirmed", familyConfirmedAt: new Date().toISOString() }));
+  const later = new Date(Date.now() + 60_000).toISOString();
+  await assert.rejects(store.patchWithdrawal(w.id, { kind: "family_confirmed", familyConfirmedAt: later }));
 
   // Settled donations never change.
   const d = (await store.listDonations(c.id, { status: "paid" }))[0];

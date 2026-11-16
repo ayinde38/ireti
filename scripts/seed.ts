@@ -10,7 +10,7 @@ async function main() {
   const db = await sql();
   const [{ n }] = await db.query<{ n: number }>("select count(*)::int as n from hospitals");
   if (n > 0) throw new Error("Database already has hospitals; seed only an empty database.");
-  await seedInto(db);
+  await seedInto(db, { withLedger: !process.env.NWC_URL });
   console.log("Seeded. Hospital login: billing@harbourview.test / ireti-demo. Set DEMO_DATA=true to show demo hints.");
 }
 
