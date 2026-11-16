@@ -1,9 +1,9 @@
 import "server-only";
 import { createHash } from "node:crypto";
-import { Invoice } from "@getalby/lightning-tools/bolt11";
 import { LightningAddress } from "@getalby/lightning-tools/lnurl";
 import { formatInt, formatNgn, satsToNgn } from "./format";
-import { invoiceMatchesNetwork, lightning, network, walletKind } from "./lightning";
+import { invoiceMatchesNetwork, lightning, testHospitalWallet, walletKind } from "./lightning";
+import { testHospitalInvoice } from "./lightning/nwc";
 import { appUrl, sendEmail } from "./notify";
 import { getNgnRate } from "./rates";
 import { store } from "./store";
@@ -180,28 +180,15 @@ async function afterDonation(d: Donation) {
 
 export class WithdrawalError extends Error {}
 
-const TEST_FAUCET_LABEL = "Mutinynet faucet (test payout)";
+const TEST_WALLET_LABEL = "Hospital test wallet (Mutinynet)";
 
 /** The hospital's verified Lightning address issues the invoice (LNURL-pay). */
 async function addressInvoice(address: string, satoshi: number, comment: string) {
-  const ln = new LightningAddress(address);
+  // No proxy: look the address up directly rather than through a third party.
+  const ln = new LightningAddress(address, { proxy: false });
   await ln.fetch();
   const inv = await ln.requestInvoice({ satoshi, comment });
   return { paymentRequest: inv.paymentRequest, paymentHash: inv.paymentHash, satoshi: inv.satoshi };
-}
-
-/** Test network only: the faucet stands in for the hospital's wallet. */
-async function faucetInvoice(satoshi: number) {
-  const res = await fetch("https://faucet.mutinynet.com/api/bolt11", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ amount_sats: satoshi }),
-    signal: AbortSignal.timeout(15_000),
-  });
-  if (!res.ok) throw new Error(`Faucet invoice failed: ${res.status}`);
-  const { bolt11 } = (await res.json()) as { bolt11: string };
-  const inv = new Invoice({ pr: bolt11 });
-  return { paymentRequest: bolt11, paymentHash: inv.paymentHash, satoshi: inv.satoshi };
 }
 
 export async function withdrawFromCampaign(opts: {
@@ -233,7 +220,7 @@ export async function withdrawFromCampaign(opts: {
   if (method === "bank" && walletKind() !== "demo") {
     throw new WithdrawalError("Bank payouts aren't available yet. Please withdraw to your Lightning address.");
   }
-  if (method === "test_faucet" && network() !== "mutinynet") {
+  if (method === "test_wallet" && !testHospitalWallet()) {
     throw new WithdrawalError("Test payouts are only available on the test network.");
   }
   if (method === "lightning" && !hospital.lightningAddressVerified) {
@@ -255,8 +242,8 @@ export async function withdrawFromCampaign(opts: {
   const destination =
     method === "lightning"
       ? hospital.lightningAddress
-      : method === "test_faucet"
-        ? TEST_FAUCET_LABEL
+      : method === "test_wallet"
+        ? TEST_WALLET_LABEL
         : `${hospital.bankName ?? "Bank"} ••••${hospital.bankAccountLast4 ?? ""}`;
   const w = await store.createWithdrawal({
     campaignId: campaign.id,
@@ -290,8 +277,8 @@ export async function withdrawFromCampaign(opts: {
     try {
       if (walletKind() !== "demo") {
         const inv =
-          method === "test_faucet"
-            ? await faucetInvoice(amountSats)
+          method === "test_wallet"
+            ? await testHospitalInvoice(amountSats, `Ireti withdrawal ${w.id} for ${campaign.billReference}`)
             : await addressInvoice(hospital.lightningAddress, amountSats, `Ireti withdrawal ${w.id} for ${campaign.billReference}`);
         if (inv.satoshi !== amountSats) throw new Error("Destination returned a wrong amount");
         if (!invoiceMatchesNetwork(inv.paymentRequest)) throw new Error("Destination is on a different network");

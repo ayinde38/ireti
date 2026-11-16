@@ -1,5 +1,6 @@
 import "server-only";
 import { NWCClient } from "@getalby/sdk/nwc";
+import { Invoice } from "@getalby/lightning-tools/bolt11";
 import type { LightningProvider } from "./types";
 
 /**
@@ -46,4 +47,18 @@ export function nwcProvider(): LightningProvider {
       return Math.floor(r.balance / 1000);
     },
   };
+}
+
+/**
+ * Test network only: asks the stand-in hospital wallet (TEST_HOSPITAL_NWC_URL,
+ * a sub-wallet the tester controls) for an invoice, as a Lightning address would.
+ */
+export async function testHospitalInvoice(satoshi: number, memo: string) {
+  const client = new NWCClient({ nostrWalletConnectUrl: process.env.TEST_HOSPITAL_NWC_URL! });
+  try {
+    const tx = await client.makeInvoice({ amount: satoshi * 1000, description: memo });
+    return { paymentRequest: tx.invoice, paymentHash: tx.payment_hash, satoshi: new Invoice({ pr: tx.invoice }).satoshi };
+  } finally {
+    client.close();
+  }
 }

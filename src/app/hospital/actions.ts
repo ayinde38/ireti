@@ -67,7 +67,7 @@ export async function withdraw(_: FormState, form: FormData): Promise<FormState>
   const ngn = Number(String(form.get("amountNgn") ?? "").replace(/[^\d]/g, ""));
   const amountSats = all ? v.totals.availableSats : Math.min(ngnToSats(ngn, v.rate.ngnPerBtc), v.totals.availableSats);
   const m = form.get("method");
-  const method = m === "bank" || m === "test_faucet" ? m : "lightning";
+  const method = m === "bank" || m === "test_wallet" ? m : "lightning";
   try {
     await withdrawFromCampaign({
       campaign: c,
@@ -79,7 +79,9 @@ export async function withdraw(_: FormState, form: FormData): Promise<FormState>
     });
   } catch (err) {
     if (err instanceof WithdrawalError) return { error: err.message, nextKey: randomUUID() };
-    throw err;
+    // Anything else failed before money moved (or was recorded as pending).
+    console.error("withdraw failed", err);
+    return { error: "Something went wrong, and nothing was sent. Please try again.", nextKey: randomUUID() };
   }
   revalidatePath("/hospital");
   return {

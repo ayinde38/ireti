@@ -35,7 +35,7 @@ export async function verifyHospital(form: FormData) {
   let addressOk = walletKind() === "demo";
   if (!addressOk) {
     try {
-      const ln = new LightningAddress(h.lightningAddress);
+      const ln = new LightningAddress(h.lightningAddress, { proxy: false });
       await ln.fetch();
       addressOk = Boolean(ln.lnurlpData?.callback);
     } catch {

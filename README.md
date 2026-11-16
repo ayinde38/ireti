@@ -28,20 +28,24 @@ npm run setup          # starts the test wallet in Docker and prints the one man
 npm run dev
 ```
 
-`npm run setup` runs Alby Hub on Mutinynet (a Bitcoin test network with free coins), creates Ireti's wallet
-connection and writes `.env.local`. It then asks you to open a channel to the wallet from
+`npm run setup` runs Alby Hub on Mutinynet (a Bitcoin test network with free coins) and creates two
+sub-wallets on it: Ireti's escrow, and a hospital test wallet that stands in for a hospital's own wallet.
+It writes both connections to `.env.local`. It then asks you to open a channel to the wallet from
 https://faucet.mutinynet.com (GitHub sign-in, about a minute). Re-run `npm run setup` any time to check the
 wallet; it prints "Ready" once it can receive.
 
 With a real wallet the sample campaigns start at ₦0: every sat on the ledger is a real test payment, so the
 proof of reserves on `/transparency` balances. To try the full loop:
 
-1. **Donate:** on a campaign, copy the payment request and pay it from the faucet's Lightning box. The page
-   confirms on its own.
-2. **Withdraw:** sign in at `/hospital`, pick "Mutinynet faucet (test payout)" and withdraw. Ireti gets an
-   invoice for the exact amount from the faucet (standing in for the hospital's wallet) and pays it; the
-   payment proof appears on the campaign's public timeline.
+1. **Donate:** on a campaign, copy the payment request and pay it from the wallet dashboard
+   (http://127.0.0.1:8081, Send) or from the faucet's Lightning box. The page confirms on its own.
+2. **Withdraw:** sign in at `/hospital`, pick "Hospital test wallet (Mutinynet)" and withdraw. Ireti asks
+   that wallet for an invoice for the exact amount, as it would a hospital's Lightning address, and pays it;
+   the payment proof appears on the campaign's public timeline. The coins stay on your node.
 3. **Receipt and family:** post a receipt from `/hospital`, then confirm it from the family link.
+
+For an empty start (no sample hospitals or campaigns), add `SAMPLE_DATA=false` to `.env.local`, stop
+`npm run dev`, run `npm run db:reset`, and add your own hospital with `npm run hospital:add` (below).
 
 Logins for the sample data:
 
@@ -60,8 +64,8 @@ docker compose -f infra/mutinynet/docker-compose.yml down      # stop the test w
 docker compose -f infra/mutinynet/docker-compose.yml down -v   # stop it and delete it
 ```
 
-The faucet payout exists only on the test network; on mainnet a hospital is paid only to its verified
-Lightning address. Bank (naira) payouts are a demo stand-in, switched off with a real wallet. A Lightning
+The hospital test wallet exists only on the test network; on mainnet a hospital is paid only to its
+verified Lightning address. Bank (naira) payouts are a demo stand-in, switched off with a real wallet. A Lightning
 payout that can't be confirmed stays reserved and appears under "Payouts to check" on `/admin`.
 
 ## How it runs

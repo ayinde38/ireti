@@ -9,7 +9,7 @@ export type CampaignStatus =
 
 export type DonationStatus = "pending" | "paid" | "expired";
 type WithdrawalStatus = "pending" | "sent" | "failed";
-export type WithdrawalMethod = "lightning" | "bank" | "test_faucet";
+export type WithdrawalMethod = "lightning" | "bank" | "test_wallet";
 
 export interface Hospital {
   id: string;

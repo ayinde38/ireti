@@ -76,7 +76,7 @@ export function WithdrawForm({
   ngnPerBtc,
   minNgn,
   bankLabel,
-  testFaucet,
+  testWallet,
   initialKey,
 }: {
   campaignId: string;
@@ -84,8 +84,8 @@ export function WithdrawForm({
   ngnPerBtc: number;
   minNgn: number;
   bankLabel: string | null;
-  /** Test network: offer the Mutinynet faucet as a stand-in hospital wallet. */
-  testFaucet: boolean;
+  /** Test network: offer the stand-in hospital wallet the tester controls. */
+  testWallet: boolean;
   initialKey: string;
 }) {
   const [s, action, pending] = useActionState(withdraw, undefined);
@@ -115,7 +115,7 @@ export function WithdrawForm({
         <label className="block text-[0.9rem]">
           Pay to
           <select name="method" className="field mt-1">
-            {testFaucet && <option value="test_faucet">Mutinynet faucet (test payout)</option>}
+            {testWallet && <option value="test_wallet">Hospital test wallet (Mutinynet)</option>}
             <option value="lightning">Lightning address</option>
             {bankLabel && <option value="bank">{bankLabel} (demo)</option>}
           </select>

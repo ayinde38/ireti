@@ -42,3 +42,8 @@ export function invoiceMatchesNetwork(bolt11: string) {
   if (n === "mutinynet") return pr.startsWith("lntbs");
   return pr.startsWith("lnbc") && !pr.startsWith("lnbcrt");
 }
+
+/** A stand-in hospital wallet is configured (test network only). */
+export function testHospitalWallet() {
+  return network() === "mutinynet" && Boolean(process.env.TEST_HOSPITAL_NWC_URL);
+}
