@@ -1,0 +1,26 @@
+# Ireti test escrow wallet: Alby Hub with its built-in Lightning node on
+# Mutinynet (a signet with free test coins). Started by `npm run setup`.
+# Chain data comes from mutinynet.com, so there is no chain download.
+name: ireti-wallet
+
+services:
+  albyhub:
+    image: ghcr.io/getalby/hub:v1.24.7
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8081:8080" # wallet dashboard; this machine only
+    environment:
+      WORK_DIR: /data
+      NETWORK: signet
+      LN_BACKEND_TYPE: LDK
+      LDK_ESPLORA_SERVER: https://mutinynet.com/api
+      MEMPOOL_API: https://mutinynet.com/api
+      LDK_GOSSIP_SOURCE: https://rgs.mutinynet.com/snapshot
+      # Test coins only, and the port is local: a fixed password lets the
+      # node unlock itself after a restart so Ireti keeps working.
+      AUTO_UNLOCK_PASSWORD: ireti-mutinynet-test
+    volumes:
+      - albyhub:/data
+
+volumes:
+  albyhub:
