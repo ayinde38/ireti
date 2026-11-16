@@ -4,7 +4,8 @@ import { connection } from "next/server";
 import { Suspense } from "react";
 import { CampaignCard } from "@/components/campaign-card";
 import { listPublicCampaigns } from "@/lib/campaigns";
-import { formatInt, formatNgn, satsToNgn, shortHash } from "@/lib/format";
+import { formatInt, formatMoney, satsToFiat, shortHash } from "@/lib/format";
+import { getRate } from "@/lib/rates";
 import { photos, unsplashUrl } from "@/lib/photos";
 import { transparencyData } from "@/lib/transparency";
 
@@ -38,7 +39,7 @@ const faqs = [
   },
   {
     q: "Why Bitcoin?",
-    a: "GoFundMe does not operate in Nigeria and international cards are often declined. The Lightning network lets someone in London or Accra give ₦500 in seconds for almost no fee, and every payment carries a proof that cannot be faked.",
+    a: "Most crowdfunding platforms don't operate across Africa, and international cards are often declined. The Lightning network lets someone in London, Lagos or Nairobi give the price of a meal in seconds for almost no fee, and every payment carries a proof that cannot be faked.",
   },
   {
     q: "I don't have Bitcoin. Can I still give?",
@@ -60,9 +61,9 @@ export default function Home() {
       {/* Hero: the promise on the left, a live receipt on the right */}
       <section className="container-page grid gap-12 pb-6 pt-10 lg:grid-cols-[1.05fr_0.95fr] lg:items-center lg:gap-16 lg:pt-16">
         <div>
-          <p className="label-mono text-ink-3">Medical fundraising · Nigeria</p>
+          <p className="label-mono text-ink-3">Medical fundraising · Across Africa</p>
           <h1 className="display mt-4 text-[2.7rem] sm:text-[3.9rem] lg:text-[4.6rem]">
-            Help pay a hospital bill. <span className="mark">Follow every naira.</span>
+            Help pay a hospital bill. <span className="mark">Follow every payment.</span>
           </h1>
           <p className="mt-6 max-w-lg text-[1.1rem] leading-relaxed text-ink-2">
             On Ireti, donations go only to the hospital that confirmed the bill. Never to the
@@ -172,7 +173,7 @@ export default function Home() {
               {[
                 "Confirm or reject each bill from one dashboard",
                 "See each campaign's escrow and withdraw whenever you choose",
-                "Receive sats, or naira to your bank account",
+                "Paid in bitcoin over Lightning now; local-currency bank payouts are coming",
                 "No fees during the pilot",
               ].map((t) => (
                 <li key={t} className="flex gap-3 py-3.5">
@@ -248,21 +249,21 @@ async function HeroSlip() {
         {rows.map((d) => (
           <p key={d.id} className="flex justify-between gap-3">
             <span className="truncate">{d.donorName ?? "Anonymous"}</span>
-            <span>{formatNgn(satsToNgn(d.amountSats, d.ngnPerBtcAtPayment ?? v.rate.ngnPerBtc))}</span>
+            <span>{formatMoney(satsToFiat(d.amountSats, d.fiatPerBtcAtPayment ?? v.rate.fiatPerBtc), v.campaign.currency)}</span>
           </p>
         ))}
         <div className="my-3 border-t border-dashed border-line-2" />
         <p className="flex justify-between font-semibold">
           <span>In escrow</span>
-          <span>{formatNgn(v.availableNgn)}</span>
+          <span>{formatMoney(v.available, v.campaign.currency)}</span>
         </p>
         <p className="flex justify-between">
           <span>Paid to hospital</span>
-          <span>{formatNgn(v.withdrawnNgn)}</span>
+          <span>{formatMoney(v.withdrawn, v.campaign.currency)}</span>
         </p>
         <p className="flex justify-between">
           <span>Paid to family</span>
-          <span>₦0</span>
+          <span>{formatMoney(0, v.campaign.currency)}</span>
         </p>
         <p className="mt-3 text-green">✓ Bill confirmed by hospital</p>
       </div>
@@ -273,8 +274,10 @@ async function HeroSlip() {
 async function Numbers() {
   await connection();
   const all = await listPublicCampaigns();
+  const usdRate = await getRate("USD");
+  const usd = (s: number) => formatMoney(satsToFiat(s, usdRate.fiatPerBtc), "USD");
   const items = [
-    [formatNgn(all.reduce((s, v) => s + v.withdrawnNgn, 0)), "paid directly to hospitals"],
+    [usd(all.reduce((s, v) => s + v.totals.withdrawnSats, 0)), "paid directly to hospitals"],
     [String(all.reduce((s, v) => s + v.totals.donorCount, 0)), "donations, each with a public proof"],
     [String(new Set(all.map((v) => v.hospital.id)).size), "partner hospitals"],
   ];
@@ -315,8 +318,8 @@ async function LiveCampaigns() {
 async function Proof() {
   await connection();
   const [all, t] = await Promise.all([listPublicCampaigns(), transparencyData()]);
-  const rate = all[0]?.rate.ngnPerBtc ?? 0;
-  const ngn = (s: number) => formatNgn(satsToNgn(s, rate));
+  const usdRate = await getRate("USD");
+  const usd = (s: number) => formatMoney(satsToFiat(s, usdRate.fiatPerBtc), "USD");
   const donations = all.flatMap((v) => v.donations);
   const withdrawals = all.flatMap((v) => v.withdrawals.filter((w) => w.status === "sent"));
   const withReceipt = withdrawals.filter((w) => w.receiptUploadedAt).length;
@@ -334,12 +337,12 @@ async function Proof() {
         <dl className="mt-8 grid gap-6 sm:grid-cols-2">
           <div>
             <dt className="text-[0.9rem] text-indigo-muted">Owed to all campaigns</dt>
-            <dd className="mt-1 font-[family-name:var(--font-display)] text-[2rem] font-extrabold tracking-[-0.04em]">{ngn(t.ledgerTotalSats)}</dd>
+            <dd className="mt-1 font-[family-name:var(--font-display)] text-[2rem] font-extrabold tracking-[-0.04em]">{usd(t.ledgerTotalSats)}</dd>
             <dd className="font-[family-name:var(--font-mono)] text-[0.8rem] text-indigo-muted">{formatInt(t.ledgerTotalSats)} sats</dd>
           </div>
           <div>
             <dt className="text-[0.9rem] text-indigo-muted">In the escrow wallet</dt>
-            <dd className="mt-1 font-[family-name:var(--font-display)] text-[2rem] font-extrabold tracking-[-0.04em]">{snap ? ngn(snap.walletBalanceSats) : "—"}</dd>
+            <dd className="mt-1 font-[family-name:var(--font-display)] text-[2rem] font-extrabold tracking-[-0.04em]">{snap ? usd(snap.walletBalanceSats) : "—"}</dd>
             <dd className="font-[family-name:var(--font-mono)] text-[0.8rem] text-indigo-muted">{snap ? `${formatInt(snap.walletBalanceSats)} sats` : ""}</dd>
           </div>
         </dl>
@@ -349,8 +352,8 @@ async function Proof() {
       </article>
 
       <article className="flex flex-col rounded-[24px] bg-sun p-7 sm:p-9">
-        <p className="label-mono">Paid to families or to us</p>
-        <p className="mt-2 font-[family-name:var(--font-display)] text-[5.5rem] font-extrabold leading-none tracking-[-0.06em]">₦0</p>
+        <p className="label-mono">Sats paid to families or to us</p>
+        <p className="mt-2 font-[family-name:var(--font-display)] text-[5.5rem] font-extrabold leading-none tracking-[-0.06em]">0</p>
         <p className="mt-auto pt-6 text-[1.02rem]">
           Withdrawals can only go to the hospital that confirmed the bill.
         </p>

@@ -1,5 +1,5 @@
 export function ShareLinks({ url, title }: { url: string; title: string }) {
-  const text = `${title} — every naira goes straight to the hospital, with a public receipt.`;
+  const text = `${title} — every donation goes straight to the hospital, with a public receipt.`;
   const links = [
     { label: "WhatsApp", href: `https://wa.me/?text=${encodeURIComponent(`${text} ${url}`)}` },
     { label: "X", href: `https://x.com/intent/post?text=${encodeURIComponent(text)}&url=${encodeURIComponent(url)}` },

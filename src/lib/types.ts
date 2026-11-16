@@ -14,23 +14,42 @@ export type WithdrawalMethod = "lightning" | "bank" | "test_wallet";
 export interface Hospital {
   id: string;
   name: string;
+  /** ISO 3166 code; sets the currency its campaigns are priced in. */
+  country: string;
+  currency: string;
   city: string;
+  /** State, region or province. */
   state: string;
+  address: string | null;
+  /** Licence or registration number and the body that issued it, for Ireti to check. */
+  registrationNumber: string | null;
+  registrationAuthority: string | null;
+  website: string | null;
+  phone: string | null;
   lightningAddress: string;
   lightningAddressVerified: boolean;
   bankName: string | null;
   bankAccountLast4: string | null;
-  /** Smallest withdrawal the hospital accepts, to avoid tiny payouts. */
-  minWithdrawalNgn: number;
+  /** Smallest withdrawal, in the hospital's currency, to avoid tiny payouts. */
+  minWithdrawalAmount: number;
+  /** Ireti has checked the hospital is real and licensed. Until then it can sign in but not take campaigns. */
   verified: boolean;
+  /** Set when Ireti declines the registration. */
+  rejectionReason: string | null;
+  reviewedAt: string | null;
   createdAt: string;
 }
+
+export type HospitalReview = "pending" | "verified" | "rejected";
+export const hospitalReview = (h: Hospital): HospitalReview =>
+  h.verified ? "verified" : h.rejectionReason ? "rejected" : "pending";
 
 export interface HospitalUser {
   id: string;
   hospitalId: string;
   email: string;
   name: string;
+  role: string | null;
   /** scrypt hash "salt:hash" of the user's access code. */
   accessCodeHash: string;
 }
@@ -43,7 +62,9 @@ export interface Campaign {
   story: string;
   hospitalId: string;
   billReference: string;
-  goalNgn: number;
+  /** Goal in `currency`, the hospital's currency when the campaign started. */
+  goalAmount: number;
+  currency: string;
   status: CampaignStatus;
   rejectionReason: string | null;
   deadline: string;
@@ -61,7 +82,8 @@ export interface Donation {
   id: string;
   campaignId: string;
   amountSats: number;
-  ngnPerBtcAtPayment: number | null;
+  /** Campaign currency per BTC when paid, so the gift keeps its value on the page. */
+  fiatPerBtcAtPayment: number | null;
   paymentHash: string;
   paymentRequest: string;
   /** Revealed by the wallet once paid; sha256(preimage) === paymentHash. */
@@ -82,7 +104,7 @@ export interface Withdrawal {
   campaignId: string;
   hospitalId: string;
   amountSats: number;
-  ngnPerBtcAtWithdrawal: number;
+  fiatPerBtcAtWithdrawal: number;
   method: WithdrawalMethod;
   /** Lightning address (or masked bank account) the money was sent to. */
   destination: string;

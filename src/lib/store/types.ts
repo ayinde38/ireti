@@ -14,6 +14,13 @@ type NewCampaign = Omit<
   Campaign,
   "id" | "createdAt" | "verifiedAt" | "status" | "rejectionReason"
 >;
+export type NewHospital = Pick<
+  Hospital,
+  | "name" | "country" | "currency" | "city" | "state" | "address" | "registrationNumber"
+  | "registrationAuthority" | "website" | "phone" | "lightningAddress" | "minWithdrawalAmount"
+>;
+export type NewHospitalUser = Pick<HospitalUser, "email" | "name" | "role" | "accessCodeHash">;
+
 type NewDonation = Pick<
   Donation,
   "campaignId" | "amountSats" | "paymentHash" | "paymentRequest" | "donorName" | "donorEmail" | "message" | "expiresAt"
@@ -23,7 +30,7 @@ type NewWithdrawal = Pick<
   | "campaignId"
   | "hospitalId"
   | "amountSats"
-  | "ngnPerBtcAtWithdrawal"
+  | "fiatPerBtcAtWithdrawal"
   | "method"
   | "destination"
   | "idempotencyKey"
@@ -32,7 +39,7 @@ type NewWithdrawal = Pick<
 
 /** Only these transitions are ever written to ledger rows (append-only). */
 type DonationSettlement =
-  | { status: "paid"; paidAt: string; preimage: string | null; ngnPerBtcAtPayment: number }
+  | { status: "paid"; paidAt: string; preimage: string | null; fiatPerBtcAtPayment: number }
   | { status: "expired" };
 type WithdrawalPatch =
   | { kind: "sent"; sentAt: string; paymentHash: string | null; preimage: string | null; payoutRef: string | null }
@@ -49,7 +56,12 @@ export interface Store {
   getHospital(id: string): Promise<Hospital | null>;
   updateHospital(id: string, patch: Partial<Hospital>): Promise<Hospital>;
 
+  /** A self-registered (unverified) hospital and its first billing user. */
+  registerHospital(h: NewHospital, user: NewHospitalUser): Promise<{ hospital: Hospital; user: HospitalUser }>;
+
   getHospitalUserByEmail(email: string): Promise<HospitalUser | null>;
+  listHospitalUsers(hospitalIds: string[]): Promise<HospitalUser[]>;
+  updateHospitalUser(id: string, patch: Partial<HospitalUser>): Promise<HospitalUser>;
 
   listCampaigns(opts?: { status?: CampaignStatus[]; hospitalId?: string }): Promise<Campaign[]>;
   getCampaign(id: string): Promise<Campaign | null>;
@@ -60,6 +72,8 @@ export interface Store {
 
   listDonations(campaignId: string, opts?: { status?: DonationStatus }): Promise<Donation[]>;
   getDonation(id: string): Promise<Donation | null>;
+  /** Unsettled donations whose invoice could still be (or just was) paid. */
+  listOpenDonations(): Promise<Donation[]>;
   getDonationByHash(paymentHash: string): Promise<Donation | null>;
   createDonation(input: NewDonation): Promise<Donation>;
   /** Pending → paid or expired, once. Refuses any other change. */
@@ -79,6 +93,9 @@ export interface Store {
 
   addSnapshot(s: Omit<ReserveSnapshot, "id" | "takenAt">): Promise<ReserveSnapshot>;
   listSnapshots(limit: number): Promise<ReserveSnapshot[]>;
+
+  /** Changes whenever anything a page shows changes; cheap enough to poll. */
+  changeMarker(): Promise<string>;
 
   /** Stores an uploaded receipt and returns a URL the public page can show. */
   saveReceiptFile(withdrawalId: string, file: File): Promise<string>;

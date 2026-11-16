@@ -4,9 +4,10 @@ import { randomUUID } from "node:crypto";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { headers } from "next/headers";
+import { clientIp } from "@/lib/client-ip";
 import { currentHospitalUser, signInHospital, signOutHospital } from "@/lib/auth";
 import { campaignView, postReceipt, withdrawFromCampaign, WithdrawalError } from "@/lib/campaigns";
-import { ngnToSats } from "@/lib/format";
+import { fiatToSats } from "@/lib/format";
 import { appUrl, sendEmail } from "@/lib/notify";
 import { rateLimit } from "@/lib/rate-limit";
 import { store } from "@/lib/store";
@@ -14,12 +15,17 @@ import { store } from "@/lib/store";
 export type FormState = { error?: string; ok?: string; nextKey?: string } | undefined;
 
 export async function signIn(_: FormState, form: FormData): Promise<FormState> {
-  const ip = (await headers()).get("x-forwarded-for")?.split(",")[0] ?? "local";
+  const ip = clientIp(await headers());
   if (!rateLimit(`hospital-login:${ip}`, 10, 15 * 60_000)) {
     return { error: "Too many attempts. Please wait 15 minutes." };
   }
-  const ok = await signInHospital(String(form.get("email") ?? ""), String(form.get("code") ?? ""));
-  if (!ok) return { error: "That email and access code don't match an active hospital account." };
+  const email = String(form.get("email") ?? "").trim().toLowerCase();
+  // Per account too, so guessing one hospital's code from many IPs is slow.
+  if (!rateLimit(`hospital-login-account:${email}`, 10, 15 * 60_000)) {
+    return { error: "Too many attempts for this account. Please wait 15 minutes." };
+  }
+  const ok = await signInHospital(email, String(form.get("code") ?? ""));
+  if (!ok) return { error: "That email and access code don't match a hospital account." };
   redirect("/hospital");
 }
 
@@ -31,6 +37,8 @@ export async function signOut() {
 async function requireHospital() {
   const s = await currentHospitalUser();
   if (!s) throw new Error("Not signed in");
+  // A registered hospital can sign in at once, but touches bills and money only once verified.
+  if (!s.hospital.verified) throw new Error("Hospital not verified yet");
   return s;
 }
 
@@ -64,8 +72,8 @@ export async function withdraw(_: FormState, form: FormData): Promise<FormState>
   const c = await ownCampaign(String(form.get("campaignId")), hospital.id);
   const v = await campaignView(c);
   const all = form.get("all") === "1";
-  const ngn = Number(String(form.get("amountNgn") ?? "").replace(/[^\d]/g, ""));
-  const amountSats = all ? v.totals.availableSats : Math.min(ngnToSats(ngn, v.rate.ngnPerBtc), v.totals.availableSats);
+  const amount = Number(String(form.get("amount") ?? "").replace(/[^\d]/g, ""));
+  const amountSats = all ? v.totals.availableSats : Math.min(fiatToSats(amount, v.rate.fiatPerBtc), v.totals.availableSats);
   const m = form.get("method");
   const method = m === "bank" || m === "test_wallet" ? m : "lightning";
   try {
@@ -90,7 +98,19 @@ export async function withdraw(_: FormState, form: FormData): Promise<FormState>
   };
 }
 
-const RECEIPT_TYPES = ["image/jpeg", "image/png", "image/webp", "application/pdf"];
+/**
+ * The file's real type, from its first bytes. The browser-sent type is
+ * whatever the uploader says, so it's never trusted: receipts are served
+ * publicly from our domain, and only these four formats may be.
+ */
+function sniffReceiptType(b: Uint8Array): string | null {
+  const at = (i: number, ...xs: number[]) => xs.every((x, k) => b[i + k] === x);
+  if (at(0, 0xff, 0xd8, 0xff)) return "image/jpeg";
+  if (at(0, 0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a)) return "image/png";
+  if (at(0, 0x52, 0x49, 0x46, 0x46) && at(8, 0x57, 0x45, 0x42, 0x50)) return "image/webp";
+  if (at(0, 0x25, 0x50, 0x44, 0x46, 0x2d)) return "application/pdf";
+  return null;
+}
 
 export async function uploadReceipt(_: FormState, form: FormData): Promise<FormState> {
   const { user, hospital } = await requireHospital();
@@ -102,9 +122,12 @@ export async function uploadReceipt(_: FormState, form: FormData): Promise<FormS
   const note = String(form.get("note") ?? "").trim().slice(0, 300) || null;
   const f = file instanceof File && file.size > 0 ? file : null;
   if (!f) return { error: "Attach the receipt (photo or PDF)." };
-  if (!RECEIPT_TYPES.includes(f.type)) return { error: "Use a JPG, PNG, WebP or PDF file." };
   if (f.size > 4 * 1024 * 1024) return { error: "The file must be under 4 MB." };
-  await postReceipt({ withdrawal: w, campaign: c, file: f, note, actorEmail: user.email });
+  const bytes = new Uint8Array(await f.arrayBuffer());
+  const type = sniffReceiptType(bytes);
+  if (!type) return { error: "Use a JPG, PNG, WebP or PDF file." };
+  const clean = new File([bytes], "receipt", { type });
+  await postReceipt({ withdrawal: w, campaign: c, file: clean, note, actorEmail: user.email });
   revalidatePath("/hospital");
   return { ok: "Receipt posted. Donors can see it now." };
 }

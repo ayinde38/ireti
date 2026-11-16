@@ -2,9 +2,11 @@ import "server-only";
 
 /**
  * Sends a short email. Uses Resend's REST API when RESEND_API_KEY is set;
- * otherwise logs, so local development needs no provider. SMS (e.g. Termii
- * for Nigerian numbers) can be added behind the same function later.
+ * otherwise logs, so local development needs no provider. SMS can be added
+ * behind the same function later.
  */
+export const emailEnabled = () => Boolean(process.env.RESEND_API_KEY);
+
 export async function sendEmail(to: string[], subject: string, text: string) {
   const recipients = [...new Set(to.filter(Boolean))];
   if (recipients.length === 0) return;

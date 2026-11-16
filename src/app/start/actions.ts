@@ -1,12 +1,15 @@
 "use server";
 
 import { randomBytes } from "node:crypto";
+import { headers } from "next/headers";
+import { clientIp } from "@/lib/client-ip";
 import { z } from "zod";
+import { formatMoney } from "@/lib/format";
 import { appUrl, sendEmail } from "@/lib/notify";
+import { localAmounts } from "@/lib/rates";
 import { rateLimit } from "@/lib/rate-limit";
 import { familyTokenHash } from "@/lib/secrets";
 import { store } from "@/lib/store";
-import { headers } from "next/headers";
 
 const Input = z.object({
   campaignerName: z.string().trim().min(2, "Tell us your name.").max(80),
@@ -16,21 +19,21 @@ const Input = z.object({
   story: z.string().trim().min(80, "Please write at least a few sentences (80+ characters).").max(4000),
   hospitalId: z.string().min(1, "Choose the hospital."),
   billReference: z.string().trim().min(3, "Enter the bill or invoice number.").max(60),
-  goalNgn: z.coerce.number().int().min(10_000, "The minimum goal is ₦10,000.").max(200_000_000),
+  goalAmount: z.coerce.number({ message: "Enter the amount on the bill." }).int().positive("Enter the amount on the bill."),
   days: z.coerce.number().int().refine((d) => [14, 30, 60].includes(d)),
   consent: z.literal("on", { message: "Please confirm the patient has agreed." }),
 });
 
 export type StartState =
   | { ok: false; errors?: Record<string, string>; message?: string; values?: Record<string, string> }
-  | { ok: true; slug: string; familyUrl: string; hospitalName: string };
+  | { ok: true; slug: string; familyUrl: string; hospitalName: string; title: string; email: string };
 
 const slugify = (s: string) =>
   s.toLowerCase().normalize("NFKD").replace(/[^\w\s-]/g, "").trim().replace(/[\s_]+/g, "-").slice(0, 48);
 
 export async function startCampaign(_prev: StartState, form: FormData): Promise<StartState> {
   const values = Object.fromEntries([...form.entries()].map(([k, v]) => [k, String(v)]));
-  const ip = (await headers()).get("x-forwarded-for")?.split(",")[0] ?? "local";
+  const ip = clientIp(await headers());
   if (!rateLimit(`start:${ip}`, 5, 60 * 60_000)) {
     return { ok: false, message: "Too many campaigns from this connection. Please try again later.", values };
   }
@@ -44,6 +47,14 @@ export async function startCampaign(_prev: StartState, form: FormData): Promise<
   const d = parsed.data;
   const hospital = await store.getHospital(d.hospitalId);
   if (!hospital?.verified) return { ok: false, errors: { hospitalId: "Choose a partner hospital." }, values };
+  // Goals are in the hospital's currency; the floor is about 20 US dollars.
+  const [minGoal] = await localAmounts(hospital.currency, [20]);
+  if (d.goalAmount < minGoal) {
+    return { ok: false, errors: { goalAmount: `The minimum goal is ${formatMoney(minGoal, hospital.currency)}.` }, values };
+  }
+  if (d.goalAmount > minGoal * 50_000) {
+    return { ok: false, errors: { goalAmount: "That is more than Ireti can raise for one bill. Please check the amount." }, values };
+  }
 
   const token = randomBytes(24).toString("base64url");
   const slug = `${slugify(d.title)}-${randomBytes(3).toString("hex")}`;
@@ -54,7 +65,8 @@ export async function startCampaign(_prev: StartState, form: FormData): Promise<
     story: d.story,
     hospitalId: hospital.id,
     billReference: d.billReference,
-    goalNgn: d.goalNgn,
+    goalAmount: d.goalAmount,
+    currency: hospital.currency,
     deadline: new Date(Date.now() + d.days * 86_400_000).toISOString(),
     campaignerName: d.campaignerName,
     campaignerEmail: d.campaignerEmail.toLowerCase(),
@@ -71,5 +83,5 @@ export async function startCampaign(_prev: StartState, form: FormData): Promise<
       `Your private family link (keep it safe, it is the only copy):\n${familyUrl}`,
   );
 
-  return { ok: true, slug: c.slug, familyUrl, hospitalName: hospital.name };
+  return { ok: true, slug: c.slug, familyUrl, hospitalName: hospital.name, title: c.title, email: c.campaignerEmail };
 }

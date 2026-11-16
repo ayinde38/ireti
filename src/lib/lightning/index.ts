@@ -18,9 +18,13 @@ export function lightning(): LightningProvider {
   return (cached ??= pick());
 }
 
+/**
+ * Same rule as `lightning()`: a production server without a wallet is a
+ * misconfiguration, never silently "demo" (which would let the simulate
+ * endpoint mark donations paid and skip Lightning address checks).
+ */
 export function walletKind(): LightningProvider["kind"] {
-  if (process.env.NWC_URL) return "nwc";
-  return "demo";
+  return lightning().kind;
 }
 
 export type Network = "demo" | "mainnet" | "mutinynet";

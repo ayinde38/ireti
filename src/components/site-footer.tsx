@@ -16,7 +16,7 @@ export function SiteFooter() {
         <div className="max-w-xs">
           <Logo />
           <p className="mt-3 text-[0.92rem] text-ink-2">
-            Ireti means hope. Every naira goes to a verified hospital, with a public receipt.
+            Ireti means hope. Every donation goes to a verified hospital, with a public receipt.
           </p>
         </div>
         <nav aria-label="Footer" className="grid grid-cols-2 gap-x-10 gap-y-2 text-[0.92rem] text-ink-2 sm:grid-cols-3">

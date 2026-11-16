@@ -14,7 +14,7 @@ const toCamel = (s: string) => s.replace(/_([a-z0-9])/g, (_, c: string) => c.toU
 
 // bigint and numeric columns arrive as strings or bigints; the app uses numbers.
 const NUMERIC = new Set([
-  "amount_sats", "goal_ngn", "min_withdrawal_ngn", "ngn_per_btc_at_payment", "ngn_per_btc_at_withdrawal",
+  "amount_sats", "goal_amount", "min_withdrawal_amount", "fiat_per_btc_at_payment", "fiat_per_btc_at_withdrawal",
   "wallet_balance_sats", "ledger_total_sats", "difference_sats",
 ]);
 
@@ -71,6 +71,23 @@ export const sqlStore: Store = {
   getHospital: (id) => first<Hospital>("select * from hospitals where id = $1", [id]),
   updateHospital: (id, patch) => update<Hospital>("hospitals", id, patch),
 
+  async registerHospital(h, user) {
+    const hospital = await insert<Hospital>("hospitals", h);
+    try {
+      const u = await insert<HospitalUser>("hospital_users", { ...user, hospitalId: hospital.id });
+      return { hospital, user: u };
+    } catch (e) {
+      // e.g. the email was taken a moment ago: leave no hospital without a user.
+      await (await sql()).query("delete from hospitals where id = $1", [hospital.id]);
+      throw e;
+    }
+  },
+
+  listHospitalUsers: (ids) =>
+    q<HospitalUser>("select * from hospital_users where hospital_id = any($1) order by email", [ids]),
+
+  updateHospitalUser: (id, patch) => update<HospitalUser>("hospital_users", id, patch),
+
   getHospitalUserByEmail: (email) =>
     first<HospitalUser>("select * from hospital_users where email = $1", [email.trim().toLowerCase()]),
 
@@ -92,6 +109,10 @@ export const sqlStore: Store = {
     q<Donation>(
       "select * from donations where campaign_id = $1 and ($2::text is null or status = $2) order by created_at desc",
       [campaignId, opts?.status ?? null],
+    ),
+  listOpenDonations: () =>
+    q<Donation>(
+      "select * from donations where status = 'pending' and expires_at > now() - interval '10 minutes' order by created_at desc limit 50",
     ),
   getDonation: (id) => first<Donation>("select * from donations where id = $1", [id]),
   getDonationByHash: (hash) => first<Donation>("select * from donations where payment_hash = $1", [hash]),
@@ -132,6 +153,21 @@ export const sqlStore: Store = {
   },
   listAudit: (campaignId) =>
     q<AuditEntry>("select * from audit_log where campaign_id = $1 order by created_at desc", [campaignId]),
+
+  async changeMarker() {
+    const [r] = await (await sql()).query<{ m: string }>(
+      `select concat_ws('|',
+         (select max(created_at) from audit_log),
+         (select count(*) from donations where status = 'paid'),
+         (select count(*) from withdrawals where status <> 'pending'),
+         (select count(*) from withdrawals where receipt_uploaded_at is not null or family_confirmed_at is not null),
+         (select count(*) from hospitals),
+         (select max(reviewed_at) from hospitals),
+         (select count(*) from campaigns),
+         (select max(taken_at) from reserve_snapshots)) as m`,
+    );
+    return r.m;
+  },
 
   addSnapshot: (s) => insert<ReserveSnapshot>("reserve_snapshots", s),
   listSnapshots: (limit) =>

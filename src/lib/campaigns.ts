@@ -1,11 +1,12 @@
 import "server-only";
 import { createHash } from "node:crypto";
 import { LightningAddress } from "@getalby/lightning-tools/lnurl";
-import { formatInt, formatNgn, satsToNgn } from "./format";
+import { formatInt, formatMoney, satsToFiat } from "./format";
 import { invoiceMatchesNetwork, lightning, testHospitalWallet, walletKind } from "./lightning";
 import { testHospitalInvoice } from "./lightning/nwc";
 import { appUrl, sendEmail } from "./notify";
-import { getNgnRate } from "./rates";
+import { assertPublicHttps, assertPublicLightningAddress } from "./public-host";
+import { getRate } from "./rates";
 import { store } from "./store";
 import type {
   AuditEntry,
@@ -63,18 +64,18 @@ export async function campaignView(c: Campaign) {
     store.getHospital(c.hospitalId),
     store.listDonations(c.id, { status: "paid" }),
     store.listWithdrawals(c.id),
-    getNgnRate(),
+    getRate(c.currency),
   ]);
   const totals = computeTotals(donations, withdrawals);
-  // Progress counts each gift at its naira value when it was given, so the
+  // Progress counts each gift at its value (in the campaign currency) when it was given, so the
   // bar doesn't move with the bitcoin price.
-  const raisedNgn = donations.reduce(
-    (s, d) => s + satsToNgn(d.amountSats, d.ngnPerBtcAtPayment ?? rate.ngnPerBtc),
+  const raised = donations.reduce(
+    (s, d) => s + satsToFiat(d.amountSats, d.fiatPerBtcAtPayment ?? rate.fiatPerBtc),
     0,
   );
-  const withdrawnNgn = withdrawals
+  const withdrawn = withdrawals
     .filter((w) => w.status !== "failed")
-    .reduce((s, w) => s + satsToNgn(w.amountSats, w.ngnPerBtcAtWithdrawal), 0);
+    .reduce((s, w) => s + satsToFiat(w.amountSats, w.fiatPerBtcAtWithdrawal), 0);
   return {
     campaign: c,
     hospital: hospital as Hospital,
@@ -82,11 +83,11 @@ export async function campaignView(c: Campaign) {
     withdrawals,
     totals,
     rate,
-    raisedNgn,
-    withdrawnNgn,
+    raised,
+    withdrawn,
     /** What the escrow is worth if withdrawn today. */
-    availableNgn: satsToNgn(totals.availableSats, rate.ngnPerBtc),
-    percent: Math.min(100, Math.round((raisedNgn / c.goalNgn) * 100)),
+    available: satsToFiat(totals.availableSats, rate.fiatPerBtc),
+    percent: Math.min(100, Math.round((raised / c.goalAmount) * 100)),
     receiptsPending: withdrawals.filter((w) => w.status === "sent" && !w.receiptUploadedAt).length,
   };
 }
@@ -138,12 +139,13 @@ export async function settleDonation(d: Donation): Promise<Donation> {
     if (state.preimage && !preimageMatches(state.preimage, d.paymentHash)) {
       throw new Error(`Preimage does not match payment hash for ${d.id}`);
     }
-    const rate = await getNgnRate();
+    const c = await store.getCampaign(d.campaignId);
+    const rate = await getRate(c?.currency ?? "USD");
     const updated = await store.settleDonation(d.id, {
       status: "paid",
       paidAt: new Date().toISOString(),
       preimage: state.preimage,
-      ngnPerBtcAtPayment: rate.ngnPerBtc,
+      fiatPerBtcAtPayment: rate.fiatPerBtc,
     });
     if (updated.status === "paid" && d.status === "pending") {
       await afterDonation(updated).catch((e) => console.error("afterDonation", e));
@@ -156,20 +158,41 @@ export async function settleDonation(d: Donation): Promise<Donation> {
   return d;
 }
 
+const sweep = globalThis as unknown as { __iretiSweep?: { at: number; running?: Promise<void> } };
+
+/**
+ * Settles every open donation with the wallet, at most every few seconds.
+ * A donor may pay from another device and close the page; this makes the
+ * payment appear for everyone anyway (it runs whenever anyone has Ireti open).
+ */
+export function settleOpenDonations(minIntervalMs = 4000): Promise<void> {
+  const s = (sweep.__iretiSweep ??= { at: 0 });
+  if (s.running) return s.running;
+  if (Date.now() - s.at < minIntervalMs) return Promise.resolve();
+  s.at = Date.now();
+  s.running = (async () => {
+    const open = await store.listOpenDonations();
+    for (const d of open) await settleDonation(d).catch((e) => console.error("settle", d.id, e));
+  })().finally(() => {
+    s.running = undefined;
+  });
+  return s.running;
+}
+
 async function afterDonation(d: Donation) {
   const c = await store.getCampaign(d.campaignId);
   if (!c) return;
   const v = await campaignView(c);
-  if (c.status === "live" && v.raisedNgn >= c.goalNgn) {
+  if (c.status === "live" && v.raised >= c.goalAmount) {
     await store.updateCampaign(c.id, { status: "funded" });
     await store.addAudit({ role: "system", actorEmail: null, action: "goal_reached", campaignId: c.id, details: null });
   }
-  const ngn = formatNgn(satsToNgn(d.amountSats, v.rate.ngnPerBtc));
+  const amount = formatMoney(satsToFiat(d.amountSats, v.rate.fiatPerBtc), c.currency);
   await sendEmail(
     [c.campaignerEmail],
-    `New donation for ${c.patientDisplayName}: ${ngn}`,
-    `${d.donorName ?? "Someone"} gave ${ngn} (${formatInt(d.amountSats)} sats) to "${c.title}".\n` +
-      `It is held in escrow for ${v.hospital.name}. Total raised: ${formatNgn(v.raisedNgn)} of ${formatNgn(c.goalNgn)}.\n\n` +
+    `New donation for ${c.patientDisplayName}: ${amount}`,
+    `${d.donorName ?? "Someone"} gave ${amount} (${formatInt(d.amountSats)} sats) to "${c.title}".\n` +
+      `It is held in escrow for ${v.hospital.name}. Total raised: ${formatMoney(v.raised, c.currency)} of ${formatMoney(c.goalAmount, c.currency)}.\n\n` +
       `Follow every payment: ${appUrl()}/c/${c.slug}`,
   );
 }
@@ -185,8 +208,11 @@ const TEST_WALLET_LABEL = "Hospital test wallet (Mutinynet)";
 /** The hospital's verified Lightning address issues the invoice (LNURL-pay). */
 async function addressInvoice(address: string, satoshi: number, comment: string) {
   // No proxy: look the address up directly rather than through a third party.
+  await assertPublicLightningAddress(address);
   const ln = new LightningAddress(address, { proxy: false });
   await ln.fetch();
+  // The invoice request goes to a URL the address's server chose: check it too.
+  await assertPublicHttps(ln.lnurlpData?.callback ?? "");
   const inv = await ln.requestInvoice({ satoshi, comment });
   return { paymentRequest: inv.paymentRequest, paymentHash: inv.paymentHash, satoshi: inv.satoshi };
 }
@@ -204,12 +230,14 @@ export async function withdrawFromCampaign(opts: {
   // A double click or a retried request returns the first withdrawal.
   const existing = await store.getWithdrawalByIdempotencyKey(idempotencyKey);
   if (existing) {
+    if (existing.hospitalId !== hospital.id) throw new WithdrawalError("Please try again.");
     if (existing.status === "failed") throw new WithdrawalError("That attempt failed. Please try again.");
     if (existing.status === "pending") throw new WithdrawalError("This withdrawal is still being checked.");
     return existing;
   }
 
   if (campaign.hospitalId !== hospital.id) throw new WithdrawalError("This campaign belongs to another hospital.");
+  if (!hospital.verified) throw new WithdrawalError("Your hospital is still being verified by Ireti.");
   if (!canWithdraw(campaign)) {
     throw new WithdrawalError(
       campaign.status === "frozen"
@@ -218,23 +246,23 @@ export async function withdrawFromCampaign(opts: {
     );
   }
   if (method === "bank" && walletKind() !== "demo") {
-    throw new WithdrawalError("Bank payouts aren't available yet. Please withdraw to your Lightning address.");
+    throw new WithdrawalError("Bank payouts are coming soon. Please withdraw to your Lightning address.");
   }
   if (method === "test_wallet" && !testHospitalWallet()) {
     throw new WithdrawalError("Test payouts are only available on the test network.");
   }
   if (method === "lightning" && !hospital.lightningAddressVerified) {
-    throw new WithdrawalError("Your Lightning address has not been verified by Ireti yet.");
+    throw new WithdrawalError("Ireti hasn't confirmed your Lightning address works yet, so it can't receive payouts. Choose another payout option.");
   }
 
   const v = await campaignView(campaign);
-  const minSats = Math.ceil((hospital.minWithdrawalNgn / v.rate.ngnPerBtc) * 1e8);
+  const minSats = Math.ceil((hospital.minWithdrawalAmount / v.rate.fiatPerBtc) * 1e8);
   if (!Number.isInteger(amountSats) || amountSats <= 0) throw new WithdrawalError("Enter an amount.");
   if (amountSats > v.totals.availableSats) {
     throw new WithdrawalError("That is more than this campaign's available balance.");
   }
   if (amountSats < minSats && amountSats !== v.totals.availableSats) {
-    throw new WithdrawalError(`The minimum withdrawal is ${formatNgn(hospital.minWithdrawalNgn)}.`);
+    throw new WithdrawalError(`The minimum withdrawal is ${formatMoney(hospital.minWithdrawalAmount, campaign.currency)}.`);
   }
 
   // Ledger row first. Its existence reduces the available balance, so a
@@ -249,7 +277,7 @@ export async function withdrawFromCampaign(opts: {
     campaignId: campaign.id,
     hospitalId: hospital.id,
     amountSats,
-    ngnPerBtcAtWithdrawal: v.rate.ngnPerBtc,
+    fiatPerBtcAtWithdrawal: v.rate.fiatPerBtc,
     method,
     destination,
     idempotencyKey,
@@ -261,13 +289,13 @@ export async function withdrawFromCampaign(opts: {
 
   let sent: Withdrawal;
   if (method === "bank") {
-    // Demo only: stands in for the Bitnob naira payout that comes after the MVP.
+    // Demo only: stands in for the local-currency bank payout that comes after the MVP.
     sent = await store.patchWithdrawal(w.id, {
       kind: "sent",
       sentAt: new Date().toISOString(),
       paymentHash: null,
       preimage: null,
-      payoutRef: `BITNOB-STUB-${w.id.slice(-8).toUpperCase()}`,
+      payoutRef: `BANK-DEMO-${w.id.slice(-8).toUpperCase()}`,
     });
   } else {
     // Step 1: get an invoice for exactly this amount from the destination.
@@ -327,17 +355,17 @@ export async function withdrawFromCampaign(opts: {
   if (after.totals.availableSats === 0 && campaign.status === "funded") {
     await store.updateCampaign(campaign.id, { status: "withdrawn" });
   }
-  await notifyWithdrawal(campaign, hospital, sent, after.rate.ngnPerBtc).catch((e) => console.error("notify", e));
+  await notifyWithdrawal(campaign, hospital, sent, after.rate.fiatPerBtc).catch((e) => console.error("notify", e));
   return sent;
 }
 
 async function notifyWithdrawal(c: Campaign, h: Hospital, w: Withdrawal, rate: number) {
   const donors = await store.listDonations(c.id, { status: "paid" });
-  const ngn = formatNgn(satsToNgn(w.amountSats, rate));
+  const amount = formatMoney(satsToFiat(w.amountSats, rate), c.currency);
   await sendEmail(
     [c.campaignerEmail, ...donors.map((d) => d.donorEmail ?? "")],
-    `${h.name} withdrew ${ngn} for ${c.patientDisplayName}`,
-    `${h.name} withdrew ${ngn} (${formatInt(w.amountSats)} sats) from the escrow for "${c.title}".\n` +
+    `${h.name} withdrew ${amount} for ${c.patientDisplayName}`,
+    `${h.name} withdrew ${amount} (${formatInt(w.amountSats)} sats) from the escrow for "${c.title}".\n` +
       `Sent to: ${w.destination}\nPayment hash: ${w.paymentHash ?? w.payoutRef}\n\n` +
       `The hospital will post a receipt here: ${appUrl()}/c/${c.slug}#timeline`,
   );
@@ -346,12 +374,12 @@ async function notifyWithdrawal(c: Campaign, h: Hospital, w: Withdrawal, rate: n
 export async function postReceipt(opts: {
   withdrawal: Withdrawal;
   campaign: Campaign;
-  file: File | null;
+  file: File;
   note: string | null;
   actorEmail: string;
 }) {
   const { withdrawal, campaign, file, note, actorEmail } = opts;
-  const url = file ? await store.saveReceiptFile(withdrawal.id, file) : null;
+  const url = await store.saveReceiptFile(withdrawal.id, file);
   await store.patchWithdrawal(withdrawal.id, {
     kind: "receipt",
     receiptUrl: url,

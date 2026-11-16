@@ -1,6 +1,6 @@
 import Link from "next/link";
 import type { TimelineEntry } from "@/lib/campaigns";
-import { formatDate, formatInt, formatNgn, satsToNgn, shortHash, timeAgo } from "@/lib/format";
+import { formatDateTime, formatInt, formatMoney, formatWhen, satsToFiat, shortHash } from "@/lib/format";
 
 const eventCopy: Record<string, string> = {
   bill_approved: "Hospital confirmed the bill",
@@ -20,11 +20,13 @@ function Dot({ tone }: { tone: "in" | "out" | "event" | "warn" }) {
 
 export function Timeline({
   entries,
-  ngnPerBtc,
+  fiatPerBtc,
+  currency,
   hospitalName,
 }: {
   entries: TimelineEntry[];
-  ngnPerBtc: number;
+  fiatPerBtc: number;
+  currency: string;
   hospitalName: string;
 }) {
   if (entries.length === 0) {
@@ -41,10 +43,10 @@ export function Timeline({
               <div className="flex flex-wrap items-baseline justify-between gap-x-4">
                 <p>
                   <span className="font-medium">{d.donorName ?? "Anonymous"}</span>{" "}
-                  <span className="text-ink-2">gave {formatNgn(satsToNgn(d.amountSats, d.ngnPerBtcAtPayment ?? ngnPerBtc))}</span>
+                  <span className="text-ink-2">gave {formatMoney(satsToFiat(d.amountSats, d.fiatPerBtcAtPayment ?? fiatPerBtc), currency)}</span>
                 </p>
-                <time className="text-[0.85rem] text-ink-3" dateTime={e.at} title={new Date(e.at).toUTCString()}>
-                  {timeAgo(e.at)}
+                <time className="text-[0.85rem] text-ink-3" dateTime={e.at} title={formatDateTime(e.at)}>
+                  {formatWhen(e.at)}
                 </time>
               </div>
               {d.message && <p className="mt-1 text-[0.95rem] italic text-ink-2">“{d.message}”</p>}
@@ -67,9 +69,9 @@ export function Timeline({
               <div className="rounded-[18px] bg-paper p-4">
                 <div className="flex flex-wrap items-baseline justify-between gap-x-4">
                   <p className="font-medium">
-                    {failed ? "Withdrawal attempt failed" : `${hospitalName} withdrew ${formatNgn(satsToNgn(w.amountSats, w.ngnPerBtcAtWithdrawal))}`}
+                    {failed ? "Withdrawal attempt failed" : `${hospitalName} withdrew ${formatMoney(satsToFiat(w.amountSats, w.fiatPerBtcAtWithdrawal), currency)}`}
                   </p>
-                  <time className="text-[0.85rem] text-ink-3" dateTime={e.at}>{formatDate(e.at)}</time>
+                  <time className="text-[0.85rem] text-ink-3" dateTime={e.at} title={formatDateTime(e.at)}>{formatWhen(e.at)}</time>
                 </div>
                 {!failed && (
                   <dl className="mt-3 grid gap-x-6 gap-y-1.5 text-[0.85rem] sm:grid-cols-[auto_1fr]">
@@ -135,7 +137,7 @@ export function Timeline({
                   <span className="text-ink-3"> · {e.a.details}</span>
                 )}
               </p>
-              <time className="text-[0.85rem] text-ink-3" dateTime={e.at}>{formatDate(e.at)}</time>
+              <time className="text-[0.85rem] text-ink-3" dateTime={e.at} title={formatDateTime(e.at)}>{formatWhen(e.at)}</time>
             </div>
           </li>
         );

@@ -1,4 +1,6 @@
 @import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
 
 /*
  * Ireti design system. Colours are Ireti's own: adire indigo for dark panels and text, saffron for giving,
@@ -6,7 +8,6 @@
  * body is Geist; labels Geist Mono. Emphasis is a saffron highlighter stroke.
  */
 :root {
-  /* Ireti palette: adire indigo, saffron, paper. */
   --paper: #faf9f6;
   --paper-2: #f1f0ec;
   --sand: #e9eaf2; /* indigo-tinted grey for soft surfaces */
@@ -28,8 +29,26 @@
   --clay-soft: #fbeae7;
   --gold: #8a5a00;
   --gold-soft: #fbf0d3;
-  --focus: #1e2a5e;
   color-scheme: light;
+  /* shadcn/ui tokens, mapped onto the Ireti palette. */
+  --background: var(--paper);
+  --foreground: var(--ink);
+  --card-foreground: var(--ink);
+  --popover: #ffffff;
+  --popover-foreground: var(--ink);
+  --primary: var(--indigo);
+  --primary-foreground: var(--indigo-ink);
+  --secondary: var(--paper-2);
+  --secondary-foreground: var(--ink);
+  --muted: var(--paper-2);
+  --muted-foreground: var(--ink-3);
+  --accent: var(--sand);
+  --accent-foreground: var(--ink);
+  --destructive: var(--clay);
+  --border: var(--line);
+  --input: var(--line-2);
+  --ring: var(--indigo);
+  --radius: 0.875rem;
 }
 
 @theme inline {
@@ -57,6 +76,30 @@
   --font-sans: "Geist Variable", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
   --font-display: "Bricolage Grotesque Variable", "Geist Variable", ui-sans-serif, sans-serif;
   --font-mono: "Geist Mono Variable", ui-monospace, "SF Mono", Menlo, monospace;
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-foreground: var(--foreground);
+  --color-background: var(--background);
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
 }
 
 html {
@@ -64,9 +107,6 @@ html {
 }
 
 body {
-  background: var(--paper);
-  color: var(--ink);
-  font-family: var(--font-sans);
   font-size: 16px;
   line-height: 1.6;
 }
@@ -126,11 +166,6 @@ p {
   color: var(--ink);
 }
 
-:focus-visible {
-  outline: 2px solid var(--focus);
-  outline-offset: 3px;
-}
-
 /* Screen safety: no motion for people who ask for none. */
 @media (prefers-reduced-motion: reduce) {
   *,
@@ -165,26 +200,6 @@ p {
   text-transform: uppercase;
   letter-spacing: 0.02em;
   color: var(--ink-3);
-}
-
-.field {
-  width: 100%;
-  min-height: 50px;
-  border: 1px solid var(--line-2);
-  background: #fff;
-  color: var(--ink);
-  border-radius: 16px;
-  padding: 0.7rem 1rem;
-  font-size: 1rem;
-}
-.field:focus {
-  outline: 2px solid var(--ink);
-  outline-offset: -1px;
-  border-color: transparent;
-}
-textarea.field {
-  min-height: 150px;
-  line-height: 1.55;
 }
 
 .btn {
@@ -248,4 +263,25 @@ textarea.field {
   font-family: var(--font-mono);
   font-size: 0.8125rem;
   word-break: break-all;
+}
+/* Base layer, so utilities win: controls that draw their own focus ring
+   (outline-none + ring) don't also get this square outline. */
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  html {
+    @apply font-sans;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+  :focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 3px;
+  }
+  button:not(:disabled),
+  [role="button"]:not(:disabled) {
+    cursor: pointer;
+  }
 }

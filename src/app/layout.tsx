@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import "@fontsource-variable/geist";
 import "@fontsource-variable/geist-mono";
 import "@fontsource-variable/bricolage-grotesque";
+import { Providers } from "@/components/providers";
 import { SiteFooter } from "@/components/site-footer";
 import { SiteHeader } from "@/components/site-header";
 import "./globals.css";
@@ -9,7 +10,7 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: { default: "Ireti — hope, paid straight to the hospital", template: "%s · Ireti" },
   description:
-    "Medical fundraising where every donation goes to a verified hospital against a real bill, with a public receipt for every naira.",
+    "Medical fundraising where every donation goes to a verified hospital against a real bill, with a public receipt for every payment.",
 };
 
 export const viewport: Viewport = {
@@ -26,11 +27,13 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
         >
           Skip to content
         </a>
-        <SiteHeader />
-        <main id="main" className="flex-1">
-          {children}
-        </main>
-        <SiteFooter />
+        <Providers>
+          <SiteHeader />
+          <main id="main" className="flex-1">
+            {children}
+          </main>
+          <SiteFooter />
+        </Providers>
       </body>
     </html>
   );

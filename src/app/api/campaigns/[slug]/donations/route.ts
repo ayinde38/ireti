@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import { clientIp } from "@/lib/client-ip";
 import { canDonate } from "@/lib/campaigns";
 import { invoiceMatchesNetwork, lightning } from "@/lib/lightning";
 import { rateLimit } from "@/lib/rate-limit";
@@ -13,7 +14,7 @@ const Body = z.object({
 });
 
 export async function POST(req: Request, ctx: RouteContext<"/api/campaigns/[slug]/donations">) {
-  const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "local";
+  const ip = clientIp(req.headers);
   if (!rateLimit(`invoice:${ip}`, 20, 10 * 60_000)) {
     return NextResponse.json({ error: "Too many requests. Please wait a few minutes." }, { status: 429 });
   }

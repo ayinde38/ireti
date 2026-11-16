@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { campaignView, isPublic } from "@/lib/campaigns";
-import { satsToNgn } from "@/lib/format";
+import { satsToFiat } from "@/lib/format";
 import { store } from "@/lib/store";
 
 /**
@@ -18,10 +18,11 @@ export async function GET(req: Request, ctx: RouteContext<"/api/campaigns/[slug]
   const rows = [
     ...v.donations.map((d) => ({
       type: "deposit",
+      currency: c.currency,
       time: d.paidAt ?? d.createdAt,
       amount_sats: d.amountSats,
-      amount_ngn: Math.round(satsToNgn(d.amountSats, d.ngnPerBtcAtPayment ?? v.rate.ngnPerBtc)),
-      ngn_per_btc: d.ngnPerBtcAtPayment,
+      amount_fiat: Math.round(satsToFiat(d.amountSats, d.fiatPerBtcAtPayment ?? v.rate.fiatPerBtc)),
+      fiat_per_btc: d.fiatPerBtcAtPayment,
       payment_hash: d.paymentHash,
       preimage: d.preimage,
       counterparty: d.donorName ?? "Anonymous",
@@ -33,10 +34,11 @@ export async function GET(req: Request, ctx: RouteContext<"/api/campaigns/[slug]
     })),
     ...v.withdrawals.map((w) => ({
       type: "withdrawal",
+      currency: c.currency,
       time: w.sentAt ?? w.createdAt,
       amount_sats: w.amountSats,
-      amount_ngn: Math.round(satsToNgn(w.amountSats, w.ngnPerBtcAtWithdrawal)),
-      ngn_per_btc: w.ngnPerBtcAtWithdrawal,
+      amount_fiat: Math.round(satsToFiat(w.amountSats, w.fiatPerBtcAtWithdrawal)),
+      fiat_per_btc: w.fiatPerBtcAtWithdrawal,
       payment_hash: w.paymentHash ?? w.payoutRef ?? "",
       preimage: w.preimage,
       counterparty: v.hospital.name,
@@ -66,7 +68,7 @@ export async function GET(req: Request, ctx: RouteContext<"/api/campaigns/[slug]
   }
 
   return NextResponse.json({
-    campaign: { slug: c.slug, title: c.title, bill_reference: c.billReference, goal_ngn: c.goalNgn, status: c.status },
+    campaign: { slug: c.slug, title: c.title, bill_reference: c.billReference, goal: c.goalAmount, currency: c.currency, status: c.status },
     hospital: { name: v.hospital.name, lightning_address: v.hospital.lightningAddress },
     totals: v.totals,
     entries: rows,

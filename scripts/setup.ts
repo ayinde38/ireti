@@ -1,12 +1,13 @@
 /**
  * One-command test setup: npm run setup
  *
- * Starts Alby Hub on Mutinynet in Docker, sets up its Lightning node, creates
- * the wallet connection Ireti uses, connects to the faucet's node and writes
- * .env.local. Safe to re-run: it reuses what exists and prints the status.
+ * Starts Alby Hub on Mutinynet in Docker, creates Ireti's escrow and the
+ * hospital test wallet, writes .env.local, gets a channel from the Mutinynet
+ * faucet (one GitHub approval), then starts the app and opens it. Safe to
+ * re-run: it reuses what exists. `--no-start` stops before starting the app.
  * Without Docker, `npm run dev` still works in demo mode.
  */
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 
@@ -15,6 +16,9 @@ const PASSWORD = "ireti-mutinynet-test"; // matches infra/mutinynet/docker-compo
 const COMPOSE = "infra/mutinynet/docker-compose.yml";
 const ENV_FILE = ".env.local";
 const LOCAL_DB = ".data/ireti-db";
+const FAUCET = "https://faucet.mutinynet.com";
+/** Small on purpose: plenty for testing, and only a fifth of the faucet's daily allowance. */
+const CHANNEL = { capacity: 200_000, push: 100_000 };
 const FAUCET_NODE = {
   pubkey: "02465ed5be53d04fde66c9418ff14a5f2267723810176c9212b722e542dc1afb1b",
   address: "45.79.52.207",
@@ -123,8 +127,6 @@ async function main() {
   });
 
   const env = readEnv();
-  // Drop settings from older wallet setups.
-  for (const k of ["LNBITS_URL", "LNBITS_INVOICE_KEY", "LNBITS_ADMIN_KEY"]) env.delete(k);
 
   // Ireti's escrow and the stand-in hospital wallet are isolated sub-wallets:
   // each sees only its own balance, so the escrow balance is exactly what
@@ -172,37 +174,133 @@ async function main() {
   step("Connecting to the Mutinynet faucet's node");
   await hub("/api/peers", { token, body: FAUCET_NODE }).catch(() => {}); // fine if already connected
   const { pubkey } = await hub<{ pubkey: string }>("/api/node/connection-info", { token });
-  const channels = await hub<Channel[]>("/api/channels", { token });
-  const active = channels.filter((c) => c.active);
-  const inboundSats = Math.floor(active.reduce((s, c) => s + c.remoteBalance, 0) / 1000);
-  const fresh = await hub<App[] | { apps: App[] }>("/api/apps", { token });
+  const channels = () => hub<Channel[]>("/api/channels", { token });
+  const ready = (cs: Channel[]) => cs.some((c) => c.active && c.remoteBalance > 0);
+
+  if (!ready(await channels())) {
+    if (!(await channels()).length) {
+      step("Opening a channel from the faucet (free test coins)");
+      try {
+        await openFaucetChannel(pubkey);
+      } catch (e) {
+        manualChannelSteps(pubkey, (e as Error).message);
+        process.exit(1);
+      }
+    }
+    step("Waiting for the channel to confirm (Mutinynet makes a block every 30 seconds)");
+    await waitFor("the channel to open", async () => ready(await channels()), 15 * 60);
+  }
+
+  const apps2 = await hub<App[] | { apps: App[] }>("/api/apps", { token });
   const balanceOf = (url?: string) =>
-    ((Array.isArray(fresh) ? fresh : fresh.apps).find((a) => a.walletPubkey === keyOf(url))?.balance ?? 0) / 1000;
+    ((Array.isArray(apps2) ? apps2 : apps2.apps).find((a) => a.walletPubkey === keyOf(url))?.balance ?? 0) / 1000;
+  const cs = await channels();
+  const spendable = Math.floor(cs.reduce((s, c) => s + c.localBalance, 0) / 1000);
+  const inbound = Math.floor(cs.reduce((s, c) => s + c.remoteBalance, 0) / 1000);
 
   console.log("\n────────────────────────────────────────────────────────────");
-  if (active.length && inboundSats > 0) {
-    console.log(`✓ Ready. Channel open; the node can receive about ${inboundSats.toLocaleString()} more sats.`);
-    console.log(`  Escrow wallet: ${balanceOf(env.get("NWC_URL")).toLocaleString()} sats · Hospital test wallet: ${balanceOf(env.get("TEST_HOSPITAL_NWC_URL")).toLocaleString()} sats`);
-    console.log("\n  npm run dev   →  http://localhost:3000");
-    console.log("  To donate, copy a campaign's payment request and pay it from the wallet dashboard");
-    console.log("  (Send, using the node's own test sats) or from https://faucet.mutinynet.com.");
-    console.log("  Hospital payouts go to the hospital test wallet, so every sat stays on this node.");
-  } else {
-    console.log(channels.length ? "⏳ A channel is opening. Re-run `npm run setup` in a minute or two." : "One step left: give the wallet a channel so it can receive payments.");
-    if (!channels.length) {
-      console.log("\n  1. Open https://faucet.mutinynet.com and sign in with GitHub.");
-      console.log("  2. In \"Lightning channel\", paste this node's public key:\n");
-      console.log(`     ${pubkey}\n`);
-      console.log("     Capacity: 1,000,000 sats (the max). Push amount: 200,000: test sats on your side");
-      console.log("     that you can donate from the wallet dashboard, with no further faucet trips.");
-      console.log("     Leave the host empty: the node is already connected to the faucet.");
-      console.log("  3. Wait about a minute (Mutinynet makes a block every 30 seconds), then re-run");
-      console.log("     `npm run setup` to confirm.");
-    }
-    console.log("\n  Meanwhile `npm run dev` works; invoices start once the channel is open.");
-  }
-  console.log(`\n  Wallet dashboard: ${HUB} (password: ${PASSWORD})`);
+  console.log("✓ Ready: real Lightning payments with test coins.");
+  console.log(`  Node: ${spendable.toLocaleString()} test sats to donate with, room to receive ${inbound.toLocaleString()} more.`);
+  console.log(`  Escrow wallet: ${balanceOf(env.get("NWC_URL")).toLocaleString()} sats · Hospital test wallet: ${balanceOf(env.get("TEST_HOSPITAL_NWC_URL")).toLocaleString()} sats`);
+  console.log(`  Wallet dashboard: ${HUB} (password: ${PASSWORD})`);
+  console.log("  To donate: copy a campaign's payment request, then in the dashboard choose Send and paste it.");
   console.log("────────────────────────────────────────────────────────────");
+
+  if (process.argv.includes("--no-start")) return;
+  await startApp(env.get("APP_URL") ?? "http://localhost:3000");
+}
+
+/**
+ * The faucet funds a channel to this node after a GitHub sign-in. Uses
+ * GitHub's device flow, so the reviewer only types a short code on github.com.
+ * Only the channel's capacity counts toward the faucet's daily 1,000,000-sat
+ * allowance; the pushed sats (the reviewer's spending money) don't.
+ */
+async function openFaucetChannel(pubkey: string) {
+  const { client_id } = (await (await fetch(`${FAUCET}/auth/github/client_id`)).json()) as { client_id: string };
+  const gh = async <T,>(url: string, body: Record<string, string>) =>
+    (await (
+      await fetch(url, {
+        method: "POST",
+        headers: { Accept: "application/json", "Content-Type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams(body),
+      })
+    ).json()) as T;
+
+  const device = await gh<{ device_code: string; user_code: string; verification_uri: string; interval: number }>(
+    "https://github.com/login/device/code",
+    { client_id, scope: "user:email" },
+  );
+  if (!device.user_code) throw new Error("GitHub didn't start the sign-in");
+  console.log(`\n  The faucet needs a GitHub sign-in (any account; it only reads your email).`);
+  console.log(`  Opening ${device.verification_uri}: enter this code and approve:\n`);
+  console.log(`      ${device.user_code}\n`);
+  openBrowser(device.verification_uri);
+
+  let interval = device.interval || 5;
+  let githubToken = "";
+  for (;;) {
+    await sleep(interval * 1000);
+    const r = await gh<{ access_token?: string; error?: string }>("https://github.com/login/oauth/access_token", {
+      client_id,
+      device_code: device.device_code,
+      grant_type: "urn:ietf:params:oauth:grant-type:device_code",
+    });
+    if (r.access_token) {
+      githubToken = r.access_token;
+      break;
+    }
+    if (r.error === "slow_down") interval += 5;
+    else if (r.error !== "authorization_pending") throw new Error(`GitHub sign-in ${r.error ?? "failed"}`);
+  }
+
+  const login = await fetch(`${FAUCET}/auth/github/device`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ code: githubToken }),
+  });
+  if (!login.ok) throw new Error(`faucet sign-in failed (${login.status})`);
+  const { token } = (await login.json()) as { token: string };
+
+  const res = await fetch(`${FAUCET}/api/channel`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ capacity: CHANNEL.capacity, push_amount: CHANNEL.push, pubkey }),
+  });
+  if (!res.ok) throw new Error(`faucet refused the channel: ${(await res.text()) || res.status}`);
+  console.log(
+    `  ✓ Channel requested: ${CHANNEL.capacity.toLocaleString()} sats, ${CHANNEL.push.toLocaleString()} of them yours to donate with.`,
+  );
+}
+
+function manualChannelSteps(pubkey: string, why: string) {
+  console.log(`\nCouldn't open the channel automatically (${why}). Do it by hand instead:`);
+  console.log(`  1. Open ${FAUCET} and sign in with GitHub.`);
+  console.log(`  2. In "Lightning channel", paste this node's public key:\n\n     ${pubkey}\n`);
+  console.log(`     Capacity ${CHANNEL.capacity.toLocaleString()}, push amount ${CHANNEL.push.toLocaleString()}. Leave the host empty.`);
+  console.log("  3. Re-run `npm run setup`. It waits for the channel and starts the app.");
+}
+
+function openBrowser(url: string) {
+  const [cmd, args] =
+    process.platform === "darwin" ? ["open", [url]] : process.platform === "win32" ? ["cmd", ["/c", "start", "", url]] : ["xdg-open", [url]];
+  spawn(cmd, args, { stdio: "ignore", detached: true }).on("error", () => {}).unref();
+}
+
+/** Runs `npm run dev` (unless it's already running) and opens the app. */
+async function startApp(url: string) {
+  const up = () => fetch(url, { signal: AbortSignal.timeout(1500) }).then(() => true, () => false);
+  if (await up()) {
+    console.log(`\nThe app is already running: ${url}`);
+    openBrowser(url);
+    return;
+  }
+  step(`Starting the app at ${url} (Ctrl+C stops it)`);
+  const dev = spawn(process.platform === "win32" ? "npm.cmd" : "npm", ["run", "dev"], { stdio: "inherit" });
+  process.on("SIGINT", () => dev.kill("SIGINT"));
+  await waitFor("the app to start", up, 120);
+  openBrowser(url);
+  await new Promise((r) => dev.on("exit", r));
 }
 
 main().catch((e) => {

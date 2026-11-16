@@ -4,7 +4,7 @@ import { connection } from "next/server";
 import { Suspense } from "react";
 import { VerifyProof } from "@/components/verify-proof";
 import { campaignView } from "@/lib/campaigns";
-import { formatInt, formatNgn, satsToNgn } from "@/lib/format";
+import { formatInt, formatMoney, satsToFiat } from "@/lib/format";
 import { store } from "@/lib/store";
 
 export const metadata = { title: "Donation receipt", robots: { index: false } };
@@ -26,10 +26,10 @@ async function Receipt({ params }: { params: PageProps<"/d/[hash]">["params"] })
   const c = await store.getCampaign(d.campaignId);
   if (!c) notFound();
   const v = await campaignView(c);
-  const rate = d.ngnPerBtcAtPayment ?? v.rate.ngnPerBtc;
+  const rate = d.fiatPerBtcAtPayment ?? v.rate.fiatPerBtc;
 
   const rows: [string, React.ReactNode][] = [
-    ["Amount", <>{formatNgn(satsToNgn(d.amountSats, rate))} <span className="text-ink-3">({formatInt(d.amountSats)} sats)</span></>],
+    ["Amount", <>{formatMoney(satsToFiat(d.amountSats, rate), c.currency)} <span className="text-ink-3">({formatInt(d.amountSats)} sats)</span></>],
     ["Status", d.status === "paid" ? "Paid into escrow" : d.status === "pending" ? "Waiting for payment" : "Expired, not paid"],
     ["Time", d.paidAt ? new Date(d.paidAt).toUTCString() : "—"],
     ["Campaign", <Link key="c" className="text-green underline underline-offset-4" href={`/c/${c.slug}`}>{c.title}</Link>],

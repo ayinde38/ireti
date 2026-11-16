@@ -3,17 +3,22 @@
 import { LightningAddress } from "@getalby/lightning-tools/lnurl";
 import { revalidatePath } from "next/cache";
 import { headers } from "next/headers";
+import { clientIp } from "@/lib/client-ip";
 import { redirect } from "next/navigation";
 import { isAdmin, signInAdmin, signOutAdmin } from "@/lib/auth";
 import { walletKind } from "@/lib/lightning";
+import { assertPublicHttps, assertPublicLightningAddress } from "@/lib/public-host";
 import { rateLimit } from "@/lib/rate-limit";
 import { store } from "@/lib/store";
 
 export type AdminState = { error?: string; ok?: string } | undefined;
 
 export async function adminSignIn(_: AdminState, form: FormData): Promise<AdminState> {
-  const ip = (await headers()).get("x-forwarded-for")?.split(",")[0] ?? "local";
-  if (!rateLimit(`admin-login:${ip}`, 5, 15 * 60_000)) return { error: "Too many attempts." };
+  const ip = clientIp(await headers());
+  // Per IP, and overall: one password guards everything, so cap guesses from everywhere.
+  if (!rateLimit(`admin-login:${ip}`, 5, 15 * 60_000) || !rateLimit("admin-login:all", 30, 15 * 60_000)) {
+    return { error: "Too many attempts. Please wait 15 minutes." };
+  }
   if (!(await signInAdmin(String(form.get("password") ?? "")))) return { error: "Wrong password." };
   redirect("/admin");
 }
@@ -27,7 +32,12 @@ async function guard() {
   if (!(await isAdmin())) throw new Error("Not authorised");
 }
 
-/** Resolve the hospital's Lightning address before trusting it with payouts. */
+/**
+ * Approve a hospital after checking its licence and contact details offline,
+ * and resolve its Lightning address before trusting it with payouts. An
+ * address that doesn't resolve leaves the hospital verified but unable to
+ * withdraw there until a re-check succeeds.
+ */
 export async function verifyHospital(form: FormData) {
   await guard();
   const h = await store.getHospital(String(form.get("hospitalId")));
@@ -35,14 +45,31 @@ export async function verifyHospital(form: FormData) {
   let addressOk = walletKind() === "demo";
   if (!addressOk) {
     try {
+      await assertPublicLightningAddress(h.lightningAddress);
       const ln = new LightningAddress(h.lightningAddress, { proxy: false });
       await ln.fetch();
-      addressOk = Boolean(ln.lnurlpData?.callback);
+      const callback = ln.lnurlpData?.callback;
+      if (callback) await assertPublicHttps(callback);
+      addressOk = Boolean(callback);
     } catch {
       addressOk = false;
     }
   }
-  await store.updateHospital(h.id, { verified: true, lightningAddressVerified: addressOk });
+  await store.updateHospital(h.id, {
+    verified: true,
+    lightningAddressVerified: addressOk,
+    rejectionReason: null,
+    reviewedAt: new Date().toISOString(),
+  });
+  revalidatePath("/admin");
+}
+
+export async function declineHospital(form: FormData) {
+  await guard();
+  const h = await store.getHospital(String(form.get("hospitalId")));
+  const reason = String(form.get("reason") ?? "").trim().slice(0, 300);
+  if (!h || h.verified || !reason) return;
+  await store.updateHospital(h.id, { rejectionReason: reason, reviewedAt: new Date().toISOString() });
   revalidatePath("/admin");
 }
 

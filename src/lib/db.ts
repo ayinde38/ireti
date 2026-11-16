@@ -88,9 +88,9 @@ async function open(): Promise<Engine> {
   await migrate(db);
   if (!url) {
     const [{ n }] = await db.query<{ n: number }>("select count(*)::int as n from hospitals");
-    // SAMPLE_DATA=false starts empty. Sample payments only make sense with
-    // the simulated wallet (see seedInto).
-    if (n === 0 && process.env.SAMPLE_DATA !== "false") {
+    // Starts empty: hospitals register themselves. SAMPLE_DATA=true (the e2e
+    // suite) loads sample data; sample payments only with the simulated wallet.
+    if (n === 0 && process.env.SAMPLE_DATA === "true") {
       await (await import("./store/seed")).seedInto(db, { withLedger: !process.env.NWC_URL });
     }
   }

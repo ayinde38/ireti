@@ -5,14 +5,17 @@ import { Suspense } from "react";
 import { DonatePanel } from "@/components/donate-panel";
 import { ShareLinks } from "@/components/share-links";
 import { Timeline } from "@/components/timeline";
-import { Notice, Progress, StatusPill, VerifiedBadge } from "@/components/ui";
+import { Notice, Progress, StatusPill, VerifiedBadge } from "@/components/status";
 import { campaignTimeline, campaignView, canDonate, isPublic } from "@/lib/campaigns";
-import { daysLeft, formatDate, formatInt, formatNgn } from "@/lib/format";
+import { countryName } from "@/lib/countries";
+import { daysLeft, formatDate, formatInt, formatMoney } from "@/lib/format";
 import { network } from "@/lib/lightning";
+import { localAmounts } from "@/lib/rates";
 import { appUrl } from "@/lib/notify";
 import { store } from "@/lib/store";
 
 export async function generateMetadata({ params }: PageProps<"/c/[slug]">): Promise<Metadata> {
+  await connection();
   const { slug } = await params;
   const c = await store.getCampaignBySlug(slug);
   if (!c || !(isPublic(c) || c.status === "frozen")) return { title: "Campaign not found" };
@@ -40,6 +43,8 @@ async function Campaign({ params }: { params: PageProps<"/c/[slug]">["params"] }
   const entries = await campaignTimeline(v);
   const { hospital, totals, rate } = v;
   const open = canDonate(c);
+  const presets = open ? await localAmounts(c.currency, [2, 5, 20, 50]) : [];
+  const money = (n: number) => formatMoney(n, c.currency);
 
   return (
     <div className="container-page py-10 md:py-14">
@@ -48,7 +53,7 @@ async function Campaign({ params }: { params: PageProps<"/c/[slug]">["params"] }
           <div className="flex flex-wrap items-center gap-3 text-[0.9rem] text-ink-3">
             <StatusPill status={c.status} />
             <span>
-              {hospital.name} · {hospital.city}, {hospital.state}
+              {hospital.name} · {hospital.city}, {countryName(hospital.country)}
             </span>
           </div>
           <h1 className="mt-4 text-[2.4rem] sm:text-[3.2rem] tracking-[-0.045em]">{c.title}</h1>
@@ -80,8 +85,8 @@ async function Campaign({ params }: { params: PageProps<"/c/[slug]">["params"] }
         {/* Donate column: right after the story on phones, sticky beside it on desktop */}
         <aside className="lg:sticky lg:top-24 lg:col-start-2 lg:row-span-2 lg:row-start-1 lg:self-start">
           <div className="rounded-[24px] bg-white p-6">
-            <p className="text-[2rem] leading-none">{formatNgn(v.raisedNgn)}</p>
-            <p className="mt-2 text-[0.95rem] text-ink-2">raised of {formatNgn(c.goalNgn)} goal</p>
+            <p className="text-[2rem] leading-none">{money(v.raised)}</p>
+            <p className="mt-2 text-[0.95rem] text-ink-2">raised of {money(c.goalAmount)} goal</p>
             <div className="mt-4">
               <Progress percent={v.percent} label={`${v.percent}% of goal raised`} />
             </div>
@@ -93,7 +98,9 @@ async function Campaign({ params }: { params: PageProps<"/c/[slug]">["params"] }
               {open ? (
                 <DonatePanel
                   slug={c.slug}
-                  ngnPerBtc={rate.ngnPerBtc}
+                  fiatPerBtc={rate.fiatPerBtc}
+                  currency={c.currency}
+                  presets={presets}
                   rateLive={rate.live}
                   network={network()}
                   patientName={c.patientDisplayName}
@@ -124,22 +131,22 @@ async function Campaign({ params }: { params: PageProps<"/c/[slug]">["params"] }
             <dl className="mt-5 grid grid-cols-3 gap-4 border-t border-line pt-5">
               <div>
                 <dt className="text-[0.85rem] text-ink-3">Raised</dt>
-                <dd className="mt-1 text-[1.15rem] font-semibold">{formatNgn(v.raisedNgn)}</dd>
+                <dd className="mt-1 text-[1.15rem] font-semibold">{money(v.raised)}</dd>
                 <dd className="text-[0.8rem] text-ink-3">{formatInt(totals.raisedSats)} sats</dd>
               </div>
               <div>
                 <dt className="text-[0.85rem] text-ink-3">Paid to hospital</dt>
-                <dd className="mt-1 text-[1.15rem] font-semibold">{formatNgn(v.withdrawnNgn)}</dd>
+                <dd className="mt-1 text-[1.15rem] font-semibold">{money(v.withdrawn)}</dd>
                 <dd className="text-[0.8rem] text-ink-3">{formatInt(totals.withdrawnSats)} sats</dd>
               </div>
               <div>
                 <dt className="text-[0.85rem] text-ink-3">In escrow, today</dt>
-                <dd className="mt-1 text-[1.15rem] font-semibold">{formatNgn(v.availableNgn)}</dd>
+                <dd className="mt-1 text-[1.15rem] font-semibold">{money(v.available)}</dd>
                 <dd className="text-[0.8rem] text-ink-3">{formatInt(totals.availableSats)} sats</dd>
               </div>
             </dl>
             <p className="mt-4 text-[0.82rem] text-ink-3">
-              Gifts and withdrawals are valued in naira at the moment they happened; the escrow at
+              Gifts and withdrawals are valued in {c.currency} at the moment they happened; the escrow at
               today&apos;s rate.
             </p>
             {v.receiptsPending > 0 && (
@@ -156,7 +163,7 @@ async function Campaign({ params }: { params: PageProps<"/c/[slug]">["params"] }
           <section id="timeline" aria-labelledby="timeline-h" className="mt-12 scroll-mt-24">
             <div className="flex flex-wrap items-end justify-between gap-3">
               <div>
-                <h2 id="timeline-h" className="text-[1.6rem]">Every naira in and out</h2>
+                <h2 id="timeline-h" className="text-[1.6rem]">Every payment in and out</h2>
                 <p className="mt-1 text-[0.95rem] text-ink-2">
                   The full ledger for this campaign. Entries are never edited or deleted.
                 </p>
@@ -173,7 +180,8 @@ async function Campaign({ params }: { params: PageProps<"/c/[slug]">["params"] }
               </p>
             </div>
             <div className="mt-8">
-              <Timeline entries={entries} ngnPerBtc={rate.ngnPerBtc} hospitalName={hospital.name} />
+              <Timeline entries={entries} fiatPerBtc={rate.fiatPerBtc}
+                  currency={c.currency} hospitalName={hospital.name} />
             </div>
           </section>
         </div>

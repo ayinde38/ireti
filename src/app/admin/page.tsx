@@ -1,12 +1,14 @@
 import Link from "next/link";
 import { connection } from "next/server";
 import { Suspense } from "react";
-import { StatusPill } from "@/components/ui";
+import { StatusPill } from "@/components/status";
 import { isAdmin } from "@/lib/auth";
-import { formatDate, formatInt, formatNgn } from "@/lib/format";
+import { countryName, flag } from "@/lib/countries";
+import { formatDate, formatInt, formatMoney } from "@/lib/format";
 import { store } from "@/lib/store";
+import { hospitalReview, type Hospital } from "@/lib/types";
 import { adminSignOut, markWithdrawalFailed, setFrozen, verifyHospital } from "./actions";
-import { AdminSignIn } from "./sign-in";
+import { AdminSignIn, DeclineHospital } from "./sign-in";
 
 export const metadata = { title: "Admin", robots: { index: false } };
 
@@ -17,6 +19,8 @@ export default function AdminPage() {
     </Suspense>
   );
 }
+
+const small = "btn btn-ghost !min-h-9 !py-1.5 text-[0.88rem]";
 
 async function Admin() {
   await connection();
@@ -32,6 +36,8 @@ async function Admin() {
   const unconfirmed = (await Promise.all(campaigns.map((c) => store.listWithdrawals(c.id))))
     .flat()
     .filter((w) => w.status === "pending");
+  const pending = hospitals.filter((h) => hospitalReview(h) === "pending");
+  const contacts = await hospitalContacts(pending.map((h) => h.id));
 
   return (
     <div className="container-page py-10">
@@ -56,7 +62,7 @@ async function Admin() {
                 </span>
                 <form action={markWithdrawalFailed}>
                   <input type="hidden" name="withdrawalId" value={w.id} />
-                  <button className="btn btn-ghost !min-h-9 !py-1.5 text-[0.88rem]">Wallet shows no payment: mark failed</button>
+                  <button className={small}>Wallet shows no payment: mark failed</button>
                 </form>
               </li>
             ))}
@@ -64,38 +70,79 @@ async function Admin() {
         </section>
       )}
 
-      <h2 className="mt-10 text-[1.4rem]">Hospitals</h2>
+      <section className="mt-10">
+        <h2 className="text-[1.4rem]">Hospital registrations to review</h2>
+        {pending.length === 0 ? (
+          <p className="mt-2 text-ink-3">None waiting.</p>
+        ) : (
+          <>
+            <p className="mt-1 max-w-3xl text-[0.95rem] text-ink-2">
+              Before approving: look the licence number up with the issuing body, call the main phone number (not one the
+              applicant gives you separately) and ask for the billing office, and check the email domain matches the hospital.
+              Approving also tests the Lightning address.
+            </p>
+            <ul className="mt-5 grid gap-5 xl:grid-cols-2">
+              {pending.map((h) => (
+                <li key={h.id} className="rounded-[24px] bg-white p-6">
+                  <p className="text-[0.85rem] text-ink-3">Registered {formatDate(h.createdAt)}</p>
+                  <h3 className="mt-1 font-sans text-[1.2rem] font-semibold tracking-[-0.01em]">{h.name}</h3>
+                  <dl className="mt-4 divide-y divide-line text-[0.92rem]">
+                    {registrationRows(h, contacts.get(h.id)).map(([k, val]) => (
+                      <div key={k} className="grid grid-cols-[9rem_1fr] gap-3 py-2">
+                        <dt className="text-ink-3">{k}</dt>
+                        <dd className="break-words">{val || "—"}</dd>
+                      </div>
+                    ))}
+                  </dl>
+                  <div className="mt-5 flex flex-wrap gap-2">
+                    <form action={verifyHospital}>
+                      <input type="hidden" name="hospitalId" value={h.id} />
+                      <button className="btn btn-secondary">Approve hospital</button>
+                    </form>
+                    <DeclineHospital hospitalId={h.id} />
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </>
+        )}
+      </section>
+
+      <h2 className="mt-12 text-[1.4rem]">All hospitals</h2>
       <div className="mt-4 overflow-x-auto rounded-[24px] bg-white">
-        <table className="w-full min-w-[640px] text-left text-[0.92rem]">
+        <table className="w-full min-w-[720px] text-left text-[0.92rem]">
           <thead className="border-b border-line text-ink-3">
             <tr><th className="px-4 py-3 font-medium">Name</th><th className="px-4 py-3 font-medium">Lightning address</th><th className="px-4 py-3 font-medium">Status</th><th className="px-4 py-3" /></tr>
           </thead>
           <tbody className="divide-y divide-line">
-            {hospitals.map((h) => (
-              <tr key={h.id}>
-                <td className="px-4 py-3">{h.name}<span className="block text-ink-3">{h.city}</span></td>
-                <td className="px-4 py-3">
-                  {h.lightningAddress}
-                  <span className={`block text-[0.82rem] ${h.lightningAddressVerified ? "text-green" : "text-clay"}`}>
-                    {h.lightningAddressVerified ? "resolves" : "not checked"}
-                  </span>
-                </td>
-                <td className="px-4 py-3">{h.verified ? "Verified" : "Pending"}</td>
-                <td className="px-4 py-3 text-right">
-                  <form action={verifyHospital}>
-                    <input type="hidden" name="hospitalId" value={h.id} />
-                    <button className="btn btn-ghost !min-h-9 !py-1.5 text-[0.88rem]">
-                      {h.verified ? "Re-check address" : "Verify"}
-                    </button>
-                  </form>
-                </td>
-              </tr>
-            ))}
+            {hospitals.map((h) => {
+              const review = hospitalReview(h);
+              return (
+                <tr key={h.id}>
+                  <td className="px-4 py-3">{h.name}<span className="block text-ink-3">{flag(h.country)} {h.city}, {countryName(h.country)} · {h.currency}</span></td>
+                  <td className="px-4 py-3">
+                    {h.lightningAddress}
+                    <span className={`block text-[0.82rem] ${h.lightningAddressVerified ? "text-green" : "text-clay"}`}>
+                      {h.lightningAddressVerified ? "resolves" : "not confirmed"}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3">{review === "verified" ? "Verified" : review === "rejected" ? "Declined" : "Pending review"}</td>
+                  <td className="px-4 py-3 text-right">
+                    {review === "verified" && (
+                      <form action={verifyHospital}>
+                        <input type="hidden" name="hospitalId" value={h.id} />
+                        <button className={small}>Re-check address</button>
+                      </form>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>
 
-      <h2 className="mt-10 text-[1.4rem]">Campaigns</h2>
+      <h2 className="mt-12 text-[1.4rem]">Campaigns</h2>
       <div className="mt-4 overflow-x-auto rounded-[24px] bg-white">
         <table className="w-full min-w-[640px] text-left text-[0.92rem]">
           <thead className="border-b border-line text-ink-3">
@@ -105,16 +152,14 @@ async function Admin() {
             {campaigns.map((c) => (
               <tr key={c.id}>
                 <td className="px-4 py-3"><Link className="underline-offset-4 hover:underline" href={`/c/${c.slug}`}>{c.title}</Link></td>
-                <td className="px-4 py-3">{formatNgn(c.goalNgn)}</td>
+                <td className="px-4 py-3">{formatMoney(c.goalAmount, c.currency)}</td>
                 <td className="px-4 py-3"><StatusPill status={c.status} /></td>
                 <td className="px-4 py-3 text-right">
                   {c.status !== "pending_verification" && c.status !== "rejected" && (
                     <form action={setFrozen}>
                       <input type="hidden" name="campaignId" value={c.id} />
                       <input type="hidden" name="freeze" value={c.status === "frozen" ? "0" : "1"} />
-                      <button className="btn btn-ghost !min-h-9 !py-1.5 text-[0.88rem]">
-                        {c.status === "frozen" ? "Unfreeze" : "Freeze"}
-                      </button>
+                      <button className={small}>{c.status === "frozen" ? "Unfreeze" : "Freeze"}</button>
                     </form>
                   )}
                 </td>
@@ -125,4 +170,22 @@ async function Admin() {
       </div>
     </div>
   );
+}
+
+function registrationRows(h: Hospital, contact?: { name: string; role: string | null; email: string }): [string, React.ReactNode][] {
+  return [
+    ["Country", `${flag(h.country)} ${countryName(h.country)} (${h.currency})`],
+    ["Address", [h.address, h.city, h.state].filter(Boolean).join(", ")],
+    ["Licence number", h.registrationNumber],
+    ["Issued by", h.registrationAuthority],
+    ["Main phone", h.phone],
+    ["Website", h.website ? <a className="underline underline-offset-2" href={h.website} target="_blank" rel="noopener noreferrer">{h.website}</a> : null],
+    ["Billing contact", contact ? `${contact.name}${contact.role ? `, ${contact.role}` : ""} · ${contact.email}` : null],
+    ["Payout address", h.lightningAddress],
+  ];
+}
+
+async function hospitalContacts(ids: string[]) {
+  const users = ids.length ? await store.listHospitalUsers(ids) : [];
+  return new Map(users.map((u) => [u.hospitalId, u]));
 }
