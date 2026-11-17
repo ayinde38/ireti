@@ -4,7 +4,7 @@ import { cn } from "cn";
 import { CheckIcon, CopyIcon, KeyRoundIcon } from "lucide-react";
 import Link from "next/link";
 import { useActionState, useState } from "react";
-import { Combobox, FormField, invalid, MoneyInput } from "@/components/form-controls";
+import { Combobox, FormField, invalid, MoneyInput, keepValues } from "@/components/form-controls";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
@@ -40,7 +40,7 @@ export function StartForm({ hospitals, emailEnabled }: { hospitals: HospitalOpti
   const h = hospitals.find((x) => x.id === hospitalId);
 
   return (
-    <form action={action} className="mt-10 space-y-10" noValidate>
+    <form action={action} onSubmit={keepValues(action)} className="mt-10 space-y-10" noValidate>
       {state.message && (
         <p role="alert" className="rounded-[16px] bg-clay-soft px-4 py-3 text-[0.95rem]">{state.message}</p>
       )}

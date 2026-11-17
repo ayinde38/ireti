@@ -1,8 +1,8 @@
 "use client";
 
 import { useActionState, useState } from "react";
-import { FormField } from "@/components/form-controls";
-import { Input } from "@/components/ui/input";
+import { FormField, keepValues } from "@/components/form-controls";
+import { PasswordInput } from "@/components/ui/password-input";
 import { Textarea } from "@/components/ui/textarea";
 import { adminSignIn, declineHospital } from "./actions";
 
@@ -10,12 +10,11 @@ export function AdminSignIn({ demo, reviewerPassword }: { demo: boolean; reviewe
   const [s, action, pending] = useActionState(adminSignIn, undefined);
   const [value, setValue] = useState("");
   return (
-    <form action={action} className="space-y-5">
+    <form action={action} onSubmit={keepValues(action)} className="space-y-5">
       <FormField label="Admin password" htmlFor="password">
-        <Input
+        <PasswordInput
           id="password"
           name="password"
-          type="password"
           required
           autoComplete="current-password"
           value={value}

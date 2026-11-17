@@ -1,9 +1,10 @@
 "use client";
 
 import { useActionState, useState } from "react";
-import { Combobox, FormField, invalid } from "@/components/form-controls";
+import { Combobox, FormField, invalid, keepValues } from "@/components/form-controls";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
+import { PasswordInput } from "@/components/ui/password-input";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui/input-group";
 import { COUNTRIES, countryByCode, flag } from "@/lib/countries";
 import { registerHospital, type RegisterState } from "./actions";
@@ -24,7 +25,7 @@ export function RegisterForm({ initial, resubmit = false }: { initial?: Record<s
   const c = countryByCode(country);
 
   return (
-    <form action={action} className="mt-10 space-y-10" noValidate>
+    <form action={action} onSubmit={keepValues(action)} className="mt-10 space-y-10" noValidate>
       {state.message && (
         <p role="alert" className="rounded-[16px] bg-clay-soft px-4 py-3 text-[0.95rem]">{state.message}</p>
       )}
@@ -102,10 +103,10 @@ export function RegisterForm({ initial, resubmit = false }: { initial?: Record<s
           </FormField>
           <div className="hidden sm:block" />
           <FormField label={resubmit ? "New access code (optional)" : "Choose an access code"} htmlFor="accessCode" error={e.accessCode} hint={resubmit ? "Leave blank to keep your current code." : "At least 10 characters. You sign in with your email and this code."}>
-            <Input id="accessCode" name="accessCode" type="password" autoComplete="new-password" {...invalid("accessCode", e.accessCode)} />
+            <PasswordInput id="accessCode" name="accessCode" autoComplete="new-password" {...invalid("accessCode", e.accessCode)} />
           </FormField>
           <FormField label="Repeat the access code" htmlFor="accessCodeConfirm" error={e.accessCodeConfirm}>
-            <Input id="accessCodeConfirm" name="accessCodeConfirm" type="password" autoComplete="new-password" {...invalid("accessCodeConfirm", e.accessCodeConfirm)} />
+            <PasswordInput id="accessCodeConfirm" name="accessCodeConfirm" autoComplete="new-password" {...invalid("accessCodeConfirm", e.accessCodeConfirm)} />
           </FormField>
         </div>
       </fieldset>
@@ -133,7 +134,7 @@ export function RegisterForm({ initial, resubmit = false }: { initial?: Record<s
       </div>
 
       <button type="submit" disabled={pending} className="btn btn-secondary w-full sm:w-auto">
-        {resubmit ? (pending ? "Sending…" : "Resubmit for review") : pending ? "Registering…" : "Register and sign in"}
+        {resubmit ? (pending ? "Sending…" : "Resubmit for review") : pending ? "Registering…" : "Register for review"}
       </button>
     </form>
   );

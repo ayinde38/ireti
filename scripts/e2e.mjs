@@ -188,6 +188,12 @@ try {
   await fillRegistration(other.page);
   await other.page.waitForSelector("text=This email already has an account", { timeout: 10000 });
   check("second registration with the same email refused", true);
+  check(
+    "a refused registration keeps what was typed",
+    (await other.page.inputValue("#name")) === reg.name &&
+      (await other.page.inputValue("#email")) === reg.email &&
+      (await other.page.inputValue("#accessCode")) === reg.accessCode,
+  );
 
   await go(other.page, "/hospital");
   await other.page.fill("#email", reg.email);
@@ -195,6 +201,14 @@ try {
   await other.page.click("button:has-text('Sign in')");
   await other.page.waitForSelector("text=don't match", { timeout: 10000 });
   check("wrong access code refused", true);
+  check(
+    "a failed sign-in keeps the email and code",
+    (await other.page.inputValue("#email")) === reg.email && (await other.page.inputValue("#code")) === "wrong-code-123",
+  );
+  await other.page.click("button[aria-label='Show password']");
+  const shown = await other.page.getAttribute("#code", "type");
+  await other.page.click("button[aria-label='Hide password']");
+  check("the eye button shows and hides the access code", shown === "text" && (await other.page.getAttribute("#code", "type")) === "password");
 
   const sess = (await hosp.ctx.cookies()).find((c) => c.name === "ireti_hospital");
   const [body, mac] = sess.value.split(".");

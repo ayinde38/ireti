@@ -2,7 +2,7 @@
 
 import { cn } from "cn";
 import { CheckIcon, ChevronsUpDownIcon, FileUpIcon, XIcon } from "lucide-react";
-import { useId, useRef, useState } from "react";
+import { startTransition, useId, useRef, useState } from "react";
 import { NumericFormat } from "react-number-format";
 import {
   Command,
@@ -15,6 +15,22 @@ import {
 import { Field, FieldDescription, FieldError, FieldLabel } from "@/components/ui/field";
 import { InputGroup, InputGroupAddon } from "@/components/ui/input-group";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+
+/**
+ * Submit handler that keeps what was typed when the server sends the form back.
+ *
+ * React clears a form's fields once its action finishes, even when the server
+ * returned an error, so people had to type everything again (and the receipt
+ * form lost its file while still showing the file name). Running the same
+ * action from onSubmit skips that reset; pending states work as before.
+ * Use with `action` still set on the form, so it also works before JavaScript
+ * loads: <form action={action} onSubmit={keepValues(action)}>.
+ */
+export const keepValues = (action: (data: FormData) => void) => (e: React.FormEvent<HTMLFormElement>) => {
+  e.preventDefault();
+  const data = new FormData(e.currentTarget, (e.nativeEvent as SubmitEvent).submitter);
+  startTransition(() => action(data));
+};
 
 /** Label, hint, control and error in one consistent block. */
 export function FormField({

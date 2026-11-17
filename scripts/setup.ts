@@ -171,8 +171,47 @@ async function freeAppPort() {
   if (await listening()) console.log(`  Port ${port} is still busy. Stop that app yourself, then run \`npm run setup\` again.`);
 }
 
+/**
+ * What an earlier run already did, so a re-run can say so instead of repeating
+ * the first-run plan. Read-only and best effort: if the wallet isn't running,
+ * it only reports what .env.local shows.
+ */
+async function progress(): Promise<{ wallets: boolean; channel: "none" | "pending" | "ready" | "unknown" }> {
+  const env = readEnv();
+  const wallets = Boolean(env.get("NWC_URL")?.startsWith("nostr+walletconnect://") && env.get("TEST_HOSPITAL_NWC_URL"));
+  if (!wallets) return { wallets, channel: "unknown" };
+  try {
+    const info = await fetch(`${HUB}/api/info`, { signal: AbortSignal.timeout(1500) }).then((r) => r.json() as Promise<Info>);
+    if (!info.running) return { wallets, channel: "unknown" };
+    const { token } = await hub<{ token: string }>("/api/unlock", { body: { unlockPassword: PASSWORD, permission: "full" } });
+    const cs = await hub<Channel[]>("/api/channels", { token });
+    if (cs.some((c) => c.active && c.remoteBalance > 0)) return { wallets, channel: "ready" };
+    return { wallets, channel: cs.length ? "pending" : "none" };
+  } catch {
+    return { wallets, channel: "unknown" };
+  }
+}
+
 async function main() {
-  console.log(`
+  const done = await progress();
+  if (done.wallets) {
+    const next = {
+      ready: "Everything is already set up. This run checks it and prints the balances.",
+      pending: "Your test channel has been opened and is waiting to confirm. This run waits for it\n  (usually 1 to 3 minutes), then prints the balances.",
+      none: "There is no test channel yet. This run helps you get one from the faucet.",
+      unknown: "This run starts Alby Hub if needed, then checks the test channel.",
+    }[done.channel];
+    console.log(`
+Ireti test setup (Mutinynet: test coins with no value)
+
+Picking up where you left off. Already done: Alby Hub and its two wallets
+(saved in ${ENV_FILE}).
+  ${next}
+
+First it stops whatever is running on port ${appPort()} (usually \`npm run dev\`), so the app
+restarts with these settings. Nothing opens in your browser.`);
+  } else {
+    console.log(`
 Ireti test setup (Mutinynet: test coins with no value)
 
 This will:
@@ -185,6 +224,7 @@ This will:
   3. Get a 200,000-sat test channel from the Mutinynet faucet. The faucet needs a
      GitHub sign-in, which you do yourself; you'll be shown how.
 Nothing opens in your browser, and nothing is sent anywhere except the faucet.`);
+  }
   const go = (await ask("\nContinue? [Y/n] ", "y")).toLowerCase();
   if (go.startsWith("n")) {
     console.log("Nothing was changed. (For a quick look without Docker: `npm run dev`.)");
@@ -295,7 +335,7 @@ Nothing opens in your browser, and nothing is sent anywhere except the faucet.`)
         process.exit(1);
       }
     }
-    step("Waiting for the channel to confirm (Mutinynet makes a block every 30 seconds)");
+    step("Waiting for the channel to confirm (Mutinynet makes a block every 30 seconds; usually 1 to 3 minutes)");
     await waitFor("the channel to open", async () => ready(await channels()), 15 * 60);
   }
 

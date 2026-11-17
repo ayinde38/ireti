@@ -28,7 +28,7 @@ const Input = z
     phone: z.string().trim().regex(/^\+?[\d\s()-]{7,20}$/, "Enter the hospital's main phone number."),
     contactName: z.string().trim().min(2, "Enter your name.").max(80),
     role: z.string().trim().min(2, "Enter your role, e.g. Head of billing.").max(80),
-    email: z.email("Enter your work email address.").max(200),
+    email: z.string().trim().pipe(z.email("Enter your work email address.").max(200)),
     accessCode: z.string().max(200),
     accessCodeConfirm: z.string(),
     lightningAddress: z

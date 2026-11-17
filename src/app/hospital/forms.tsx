@@ -2,9 +2,10 @@
 
 import { cn } from "cn";
 import { useActionState, useState } from "react";
-import { FileDrop, FormField, MoneyInput } from "@/components/form-controls";
+import { FileDrop, FormField, MoneyInput, keepValues } from "@/components/form-controls";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
+import { PasswordInput } from "@/components/ui/password-input";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Textarea } from "@/components/ui/textarea";
 import { currencySymbol, formatInt, formatMoney, fiatToSats, satsToFiat } from "@/lib/format";
@@ -38,12 +39,12 @@ function Msg({ s }: { s: FormState }) {
 export function SignInForm({ demo }: { demo: boolean }) {
   const [s, action, pending] = useActionState(signIn, undefined);
   return (
-    <form action={action} className="space-y-5">
+    <form action={action} onSubmit={keepValues(action)} className="space-y-5">
       <FormField label="Work email" htmlFor="email">
         <Input id="email" name="email" type="email" autoComplete="username" required defaultValue={demo ? "billing@harbourview.test" : ""} />
       </FormField>
       <FormField label="Access code" htmlFor="code">
-        <Input id="code" name="code" type="password" autoComplete="current-password" required defaultValue={demo ? "ireti-demo" : ""} />
+        <PasswordInput id="code" name="code" autoComplete="current-password" required defaultValue={demo ? "ireti-demo" : ""} />
       </FormField>
       <Msg s={s} />
       <button className="btn btn-secondary w-full" disabled={pending}>{pending ? "Signing in…" : "Sign in"}</button>
@@ -70,7 +71,7 @@ export function ReviewForm({ campaignId, billReference, amount }: { campaignId: 
   const all = ticked.every(Boolean);
 
   return (
-    <form action={action} className="mt-5 border-t border-line pt-5">
+    <form action={action} onSubmit={keepValues(action)} className="mt-5 border-t border-line pt-5">
       <input type="hidden" name="campaignId" value={campaignId} />
       {!rejecting ? (
         <>
@@ -150,7 +151,7 @@ export function WithdrawForm({
   const canPay = Boolean(method);
 
   return (
-    <form action={action} className="mt-5 rounded-[18px] bg-paper p-5">
+    <form action={action} onSubmit={keepValues(action)} className="mt-5 rounded-[18px] bg-paper p-5">
       <input type="hidden" name="campaignId" value={campaignId} />
       <input type="hidden" name="idempotencyKey" value={key} />
       <input type="hidden" name="method" value={method} />
@@ -217,7 +218,7 @@ export function WithdrawForm({
 export function ReceiptForm({ withdrawalId }: { withdrawalId: string }) {
   const [s, action, pending] = useActionState(uploadReceiptT, undefined);
   return (
-    <form action={action} className="mt-4 space-y-4">
+    <form action={action} onSubmit={keepValues(action)} className="mt-4 space-y-4">
       <input type="hidden" name="withdrawalId" value={withdrawalId} />
       <FileDrop name="file" accept="image/jpeg,image/png,image/webp,application/pdf" maxMb={4} hint="Photo or PDF" />
       <FormField label="Note for donors (optional)" htmlFor={`note-${withdrawalId}`}>

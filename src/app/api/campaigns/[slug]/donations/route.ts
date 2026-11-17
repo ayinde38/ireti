@@ -10,7 +10,7 @@ const Body = z.object({
   amountSats: z.number().int().min(100).max(50_000_000),
   donorName: z.string().trim().max(60).optional().nullable(),
   message: z.string().trim().max(280).optional().nullable(),
-  donorEmail: z.email().max(200).optional().nullable(),
+  donorEmail: z.string().trim().pipe(z.email().max(200)).optional().nullable(),
 });
 
 export async function POST(req: Request, ctx: RouteContext<"/api/campaigns/[slug]/donations">) {
