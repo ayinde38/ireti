@@ -5,43 +5,51 @@ are priced in that country's currency. Donations go into a separate escrow per c
 the hospital that confirmed the bill can withdraw them. Every deposit and withdrawal is public,
 provable and permanent.
 
-Spec: the "Direct-to-Hospital Bitcoin Fundraising — Hackathon MVP Spec" doc.
 
 ## Review it
 
 You need Node 22+. Docker is only needed for real (test-coin) payments.
 
-**Quick look, no Docker:**
+Pick **one** of the two ways below.
+
+**Option A: quick look, no Docker:**
 
 ```bash
 npm install
-npm run dev            # http://localhost:3000
+npm run dev            # then open http://localhost:3000
 ```
 
 This uses a simulated wallet: the donate panel shows **Simulate payment**, so the whole loop runs in a
 minute. Nothing is configured. The database is created empty on first start; you add the hospital and
 campaign yourself (see "Try the full loop" below).
 
-**Real Lightning payments with free test coins (Mutinynet):**
+**Option B: real Lightning payments with free test coins (Mutinynet):**
 
 ```bash
 npm install
-npm run setup          # everything, then opens http://localhost:3000
+npm run setup          # guided: explains each step and asks before it acts
+npm run dev            # then open http://localhost:3000
 ```
 
-`npm run setup` does it all in one go (about 3 minutes):
-1. Starts Alby Hub, a Lightning wallet, on Mutinynet (a Bitcoin test network with free coins) in Docker.
-2. Creates two sub-wallets: Ireti's escrow, and a hospital test wallet that stands in for a hospital's own wallet. Both are saved to `.env.local`.
-3. Gets a payment channel from the Mutinynet faucet. Your browser opens github.com/login/device; enter the code
-   the script prints and approve. Any GitHub account works, and the faucet only reads your email.
-4. Waits for the channel to confirm, then starts the app and opens it in your browser.
+Setup first stops whatever is running on port 3000 (usually an earlier `npm run dev`) and tells you which
+process it stopped: the app has to restart there to pick up the new wallet settings, and setup may reset the
+local database, which a running dev server holds open.
+
+`npm run setup` takes about 3 minutes. It never opens your browser or signs in for you:
+1. It shows what it will do and asks you to confirm, then frees port 3000.
+2. It starts Alby Hub, a Lightning wallet, on Mutinynet (a Bitcoin test network with free coins) in Docker.
+   Its dashboard is only reachable from your computer, at http://127.0.0.1:8081.
+3. It creates two sub-wallets: Ireti's escrow, and a hospital test wallet that stands in for a hospital's own
+   wallet. Both are saved to `.env.local`.
+4. It gets a payment channel from the Mutinynet faucet, which needs a GitHub sign-in (any account; the faucet
+   only reads your email). You choose how: type a one-time code it shows you at github.com/login/device, or
+   open the channel yourself on faucet.mutinynet.com with the node key it prints.
+5. It waits for the channel to confirm, then prints the balances and what to run next.
 
 The channel is 200,000 sats, and 100,000 of them are yours to donate with. That is only a fifth of the faucet's
-daily allowance of 1,000,000 sats per person, and plenty for testing. If the automatic step fails, the script
-prints the two-minute manual steps instead.
+daily allowance of 1,000,000 sats per person, and plenty for testing.
 
-Run `npm run setup` again any time: it reuses what exists. `npm run setup -- --no-start` sets up without starting
-the app.
+Run `npm run setup` again any time: it reuses what exists and picks up where it stopped.
 
 ### Try the full loop
 
@@ -50,7 +58,8 @@ paid, so the proof of reserves on `/transparency` balances. Every open page upda
 tab, so it helps to keep the hospital, admin and campaign pages open side by side.
 
 1. **Register a hospital** at `/hospital/register`: pick any country (it sets the currency) and choose your
-   own email and access code. You're signed in straight away, under review.
+   own email and access code. A confirmation page appears; sign in at `/hospital` with that email and
+   code to follow the review.
 2. **Approve it** at `/admin` (password `ireti-admin` locally; set `ADMIN_PASSWORD` anywhere else).
 3. **Start a campaign** at `/start` for that hospital. Keep the private family link it shows you.
 4. **Confirm the bill** on `/hospital`: tick the three checks and approve. The campaign goes live.

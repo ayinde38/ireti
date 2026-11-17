@@ -1,15 +1,17 @@
 /**
- * One-command test setup: npm run setup
+ * Guided test setup: npm run setup
  *
  * Starts Alby Hub on Mutinynet in Docker, creates Ireti's escrow and the
- * hospital test wallet, writes .env.local, gets a channel from the Mutinynet
- * faucet (one GitHub approval), then starts the app and opens it. Safe to
- * re-run: it reuses what exists. `--no-start` stops before starting the app.
+ * hospital test wallet, writes .env.local and gets a channel from the Mutinynet
+ * faucet. It explains each step and asks before it acts; it never opens a
+ * browser or signs in for you. When it's done it tells you what to run next.
+ * Safe to re-run: it reuses what exists. `--yes` skips the first confirmation.
  * Without Docker, `npm run dev` still works in demo mode.
  */
-import { execFileSync, spawn } from "node:child_process";
+import { execFileSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { createInterface } from "node:readline/promises";
 
 const HUB = "http://127.0.0.1:8081";
 const PASSWORD = "ireti-mutinynet-test"; // matches infra/mutinynet/docker-compose.yml
@@ -27,6 +29,22 @@ const FAUCET_NODE = {
 
 const step = (msg: string) => console.log(`\n▸ ${msg}`);
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+const interactive = Boolean(process.stdin.isTTY) && !process.argv.includes("--yes");
+
+/** Asks a question on the terminal; without a terminal (or with --yes) the default is used. */
+async function ask(question: string, fallback: string): Promise<string> {
+  if (!interactive) return fallback;
+  const rl = createInterface({ input: process.stdin, output: process.stdout });
+  try {
+    return (await rl.question(question)).trim() || fallback;
+  } catch {
+    // Ctrl+C or Ctrl+D at a question: stop cleanly.
+    console.log("\nCancelled. Run `npm run setup` again any time; it picks up where it stopped.");
+    process.exit(0);
+  } finally {
+    rl.close();
+  }
+}
 
 async function hub<T>(path: string, init: { method?: string; body?: unknown; token?: string } = {}): Promise<T> {
   let res: Response;
@@ -98,7 +116,83 @@ interface Channel {
   remoteBalance: number;
 }
 
+const appUrl = () => readEnv().get("APP_URL") ?? "http://localhost:3000";
+const appPort = () => Number(new URL(appUrl()).port || 80);
+
+/**
+ * Why we stop whatever is on the app's port (3000 unless APP_URL says otherwise):
+ * - Setup can reset the local database, which a running dev server holds open.
+ * - A dev server started before setup keeps the old wallet settings; .env.local is
+ *   only read when the app starts.
+ * - If the port stays taken, `npm run dev` quietly moves to 3001 while APP_URL,
+ *   payment links and the browser still point at 3000, so you'd test the wrong app.
+ * The plan shown at the start says this will happen, and asks before going on.
+ */
+async function freeAppPort() {
+  const port = appPort();
+  let pids: number[] = [];
+  try {
+    if (process.platform === "win32") {
+      const out = execFileSync("netstat", ["-ano", "-p", "tcp"], { encoding: "utf8" });
+      pids = out
+        .split("\n")
+        .filter((l) => /LISTENING/.test(l) && l.trim().split(/\s+/)[1]?.endsWith(`:${port}`))
+        .map((l) => Number(l.trim().split(/\s+/).at(-1)));
+    } else {
+      // -t: PIDs only; exits non-zero when nothing listens on the port.
+      pids = execFileSync("lsof", ["-t", `-iTCP:${port}`, "-sTCP:LISTEN"], { encoding: "utf8" })
+        .split("\n")
+        .filter(Boolean)
+        .map(Number);
+    }
+  } catch {
+    return; // nothing is listening
+  }
+  pids = [...new Set(pids)].filter((pid) => pid > 0 && pid !== process.pid);
+  if (!pids.length) return;
+  step(`Stopping what is running on port ${port}`);
+  for (const pid of pids) {
+    let name = "";
+    try {
+      if (process.platform !== "win32") {
+        // e.g. "node /path/to/next dev" -> "node next dev", so you can tell what it is.
+        const cmd = execFileSync("ps", ["-p", String(pid), "-o", "command="], { encoding: "utf8" }).trim();
+        name = cmd.split(/\s+/).map((part) => part.split("/").at(-1)).join(" ").slice(0, 70);
+      }
+    } catch {}
+    console.log(`  Stopping process ${pid}${name ? ` (${name})` : ""}`);
+    try {
+      process.kill(pid, "SIGTERM");
+    } catch {}
+  }
+  // Give it a moment to shut down and release the database before going on.
+  const listening = () => fetch(appUrl(), { signal: AbortSignal.timeout(1000) }).then(() => true, () => false);
+  for (let i = 0; i < 20 && (await listening()); i++) await sleep(500);
+  if (await listening()) console.log(`  Port ${port} is still busy. Stop that app yourself, then run \`npm run setup\` again.`);
+}
+
 async function main() {
+  console.log(`
+Ireti test setup (Mutinynet: test coins with no value)
+
+This will:
+  0. Stop whatever is running on port ${appPort()} (usually an earlier \`npm run dev\`), so the
+     app can restart there with the new wallet settings.
+  1. Start Alby Hub, a Lightning wallet, in Docker. Its dashboard is only reachable
+     from this computer, at ${HUB}.
+  2. Create two wallets inside it: Ireti's escrow, and a test wallet that stands in
+     for a hospital. Their connection strings are saved to ${ENV_FILE}.
+  3. Get a 200,000-sat test channel from the Mutinynet faucet. The faucet needs a
+     GitHub sign-in, which you do yourself; you'll be shown how.
+Nothing opens in your browser, and nothing is sent anywhere except the faucet.`);
+  const go = (await ask("\nContinue? [Y/n] ", "y")).toLowerCase();
+  if (go.startsWith("n")) {
+    console.log("Nothing was changed. (For a quick look without Docker: `npm run dev`.)");
+    return;
+  }
+
+  await freeAppPort();
+
   step("Checking Docker");
   try {
     execFileSync("docker", ["info"], { stdio: "ignore" });
@@ -145,7 +239,9 @@ async function main() {
   // running dev server (it holds the database open).
   const resetDb = needEscrow && existsSync(LOCAL_DB);
   if (resetDb && (await fetch(env.get("APP_URL") ?? "http://localhost:3000", { signal: AbortSignal.timeout(1500) }).then(() => true, () => false))) {
-    console.log("\nStop `npm run dev` first: setup needs to reset the local database for the new escrow wallet.");
+    console.log(`\nAn app is running at ${env.get("APP_URL") ?? "http://localhost:3000"}.`);
+    console.log("Setup needs to reset the local database for the new escrow wallet, which it can't do while the app runs.");
+    console.log("Stop it (Ctrl+C in the terminal running `npm run dev`), then run `npm run setup` again. It picks up where it stopped.");
     process.exit(1);
   }
 
@@ -179,11 +275,23 @@ async function main() {
 
   if (!ready(await channels())) {
     if (!(await channels()).length) {
-      step("Opening a channel from the faucet (free test coins)");
+      step("Getting a test channel from the Mutinynet faucet");
+      console.log(`
+  The faucet gives free test coins to anyone who signs in with GitHub (any account;
+  it only reads your email). Choose how:
+    1  Sign in with a one-time code. You open github.com yourself and type the code
+       shown here; setup then asks the faucet for the channel.
+    2  Do it yourself on the faucet's website, using this node's public key.`);
+      const how = await ask("\n  Choose 1 or 2 [1]: ", "1");
+      if (how === "2") {
+        manualChannelSteps(pubkey);
+        return;
+      }
       try {
         await openFaucetChannel(pubkey);
       } catch (e) {
-        manualChannelSteps(pubkey, (e as Error).message);
+        console.log(`\n  That didn't work (${(e as Error).message}).`);
+        manualChannelSteps(pubkey);
         process.exit(1);
       }
     }
@@ -205,9 +313,11 @@ async function main() {
   console.log(`  Wallet dashboard: ${HUB} (password: ${PASSWORD})`);
   console.log("  To donate: copy a campaign's payment request, then in the dashboard choose Send and paste it.");
   console.log("────────────────────────────────────────────────────────────");
-
-  if (process.argv.includes("--no-start")) return;
-  await startApp(env.get("APP_URL") ?? "http://localhost:3000");
+  console.log(`
+Next:
+  1. Start the app:   npm run dev
+  2. Open it:         ${env.get("APP_URL") ?? "http://localhost:3000"}
+  3. Follow "Try the full loop" in the README. The admin password is ireti-admin.`);
 }
 
 /**
@@ -232,10 +342,10 @@ async function openFaucetChannel(pubkey: string) {
     { client_id, scope: "user:email" },
   );
   if (!device.user_code) throw new Error("GitHub didn't start the sign-in");
-  console.log(`\n  The faucet needs a GitHub sign-in (any account; it only reads your email).`);
-  console.log(`  Opening ${device.verification_uri}: enter this code and approve:\n`);
-  console.log(`      ${device.user_code}\n`);
-  openBrowser(device.verification_uri);
+  console.log(`\n  1. In your browser, open:  ${device.verification_uri}`);
+  console.log(`  2. Enter this code:        ${device.user_code}`);
+  console.log(`  3. Approve the "Mutinynet Faucet" app.`);
+  console.log(`\n  Waiting for your approval (the code expires in about 15 minutes; Ctrl+C cancels)…`);
 
   let interval = device.interval || 5;
   let githubToken = "";
@@ -273,34 +383,12 @@ async function openFaucetChannel(pubkey: string) {
   );
 }
 
-function manualChannelSteps(pubkey: string, why: string) {
-  console.log(`\nCouldn't open the channel automatically (${why}). Do it by hand instead:`);
-  console.log(`  1. Open ${FAUCET} and sign in with GitHub.`);
-  console.log(`  2. In "Lightning channel", paste this node's public key:\n\n     ${pubkey}\n`);
-  console.log(`     Capacity ${CHANNEL.capacity.toLocaleString()}, push amount ${CHANNEL.push.toLocaleString()}. Leave the host empty.`);
-  console.log("  3. Re-run `npm run setup`. It waits for the channel and starts the app.");
-}
-
-function openBrowser(url: string) {
-  const [cmd, args] =
-    process.platform === "darwin" ? ["open", [url]] : process.platform === "win32" ? ["cmd", ["/c", "start", "", url]] : ["xdg-open", [url]];
-  spawn(cmd, args, { stdio: "ignore", detached: true }).on("error", () => {}).unref();
-}
-
-/** Runs `npm run dev` (unless it's already running) and opens the app. */
-async function startApp(url: string) {
-  const up = () => fetch(url, { signal: AbortSignal.timeout(1500) }).then(() => true, () => false);
-  if (await up()) {
-    console.log(`\nThe app is already running: ${url}`);
-    openBrowser(url);
-    return;
-  }
-  step(`Starting the app at ${url} (Ctrl+C stops it)`);
-  const dev = spawn(process.platform === "win32" ? "npm.cmd" : "npm", ["run", "dev"], { stdio: "inherit" });
-  process.on("SIGINT", () => dev.kill("SIGINT"));
-  await waitFor("the app to start", up, 120);
-  openBrowser(url);
-  await new Promise((r) => dev.on("exit", r));
+function manualChannelSteps(pubkey: string) {
+  console.log(`\n  Open the channel on the faucet's website:`);
+  console.log(`    1. Open ${FAUCET} and sign in with GitHub.`);
+  console.log(`    2. In "Lightning channel", paste this node's public key:\n\n       ${pubkey}\n`);
+  console.log(`       Capacity ${CHANNEL.capacity.toLocaleString()}, push amount ${CHANNEL.push.toLocaleString()}. Leave the host empty.`);
+  console.log("    3. Run `npm run setup` again. It waits for the channel to confirm and finishes.");
 }
 
 main().catch((e) => {
