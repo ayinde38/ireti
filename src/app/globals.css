@@ -166,6 +166,40 @@ p {
   color: var(--ink);
 }
 
+/* Scroll reveal (src/components/reveal.tsx) and the hero's entrance. */
+.reveal {
+  transition:
+    opacity 0.8s cubic-bezier(0.2, 0.8, 0.2, 1),
+    transform 0.8s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.reveal[data-reveal="out"] {
+  opacity: 0;
+  transform: translateY(28px);
+}
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(18px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.rise {
+  animation: rise 0.9s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+@keyframes menu-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
 /* Screen safety: no motion for people who ask for none. */
 @media (prefers-reduced-motion: reduce) {
   *,

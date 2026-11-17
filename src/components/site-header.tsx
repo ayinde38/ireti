@@ -1,5 +1,7 @@
 import Link from "next/link";
 import { network } from "@/lib/lightning";
+import { Suspense } from "react";
+import { SiteNav } from "./site-nav";
 
 export function Logo({ className = "" }: { className?: string }) {
   return (
@@ -16,13 +18,6 @@ export function Logo({ className = "" }: { className?: string }) {
   );
 }
 
-const nav = [
-  { href: "/campaigns", label: "Campaigns", show: "sm:block" },
-  { href: "/#how-it-works", label: "How it works", show: "lg:block" },
-  { href: "/transparency", label: "Transparency", show: "md:block" },
-  { href: "/hospital", label: "For hospitals", show: "md:block" },
-];
-
 export function SiteHeader() {
   const net = network();
   const demo = net === "demo";
@@ -32,30 +27,47 @@ export function SiteHeader() {
       ? ["Test network", "Payments use Mutinynet test coins, which have no value."]
       : null;
   return (
-    <header className="sticky top-0 z-40 border-b border-line bg-paper/95 backdrop-blur">
+    <header className="sticky top-0 z-40 bg-paper/90 backdrop-blur-md">
       {notice && (
         <div className="bg-ink text-[0.8125rem] text-paper">
-          <p className="container-page py-1.5">
-            <span className="font-semibold text-sun">{notice[0]}</span>
-            <span className="opacity-80"> · {notice[1]}</span>
+          <p className="container-page flex items-baseline gap-2 py-1.5">
+            <span className="relative top-[-1px] inline-flex size-2 shrink-0 self-center" aria-hidden="true">
+              <span className="absolute inline-flex size-full animate-ping rounded-full bg-sun opacity-60 motion-reduce:animate-none" />
+              <span className="relative inline-flex size-2 rounded-full bg-sun" />
+            </span>
+            <span>
+              <span className="font-semibold text-sun">{notice[0]}</span>
+              <span className="opacity-80"> · {notice[1]}</span>
+            </span>
           </p>
         </div>
       )}
-      <div className="container-page flex h-[68px] items-center justify-between gap-6">
-        <Link href="/" aria-label="Ireti home">
-          <Logo />
-        </Link>
-        <nav aria-label="Main" className="flex items-center gap-1">
-          {nav.map((n) => (
-            <Link key={n.href} href={n.href} className={`hidden px-3 py-2 text-[0.95rem] font-medium text-ink-2 hover:text-ink ${n.show}`}>
-              {n.label}
-            </Link>
-          ))}
-          <Link href="/start" className="btn btn-secondary ml-2 !min-h-11 !px-4 !py-2 text-[0.92rem]">
+      {/* The nav reads the current path, which is only known at request time. */}
+      <Suspense fallback={<StaticBar>{home}</StaticBar>}>
+        <SiteNav>{home}</SiteNav>
+      </Suspense>
+    </header>
+  );
+}
+
+const home = (
+  <Link href="/" aria-label="Ireti home" className="shrink-0">
+    <Logo />
+  </Link>
+);
+
+/** Same height and layout as SiteNav, shown until it hydrates on dynamic routes. */
+function StaticBar({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="border-b border-transparent">
+      <div className="container-page flex h-[72px] items-center justify-between gap-6">
+        {children}
+        <span className="hidden sm:block">
+          <Link href="/start" className="btn btn-secondary !min-h-11 !px-4 !py-2 text-[0.92rem]">
             Start a fundraiser
           </Link>
-        </nav>
+        </span>
       </div>
-    </header>
+    </div>
   );
 }

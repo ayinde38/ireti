@@ -1,5 +1,6 @@
 import Image from "next/image";
 import Link from "next/link";
+import { Reveal } from "@/components/reveal";
 import { connection } from "next/server";
 import { Suspense } from "react";
 import { CampaignCard } from "@/components/campaign-card";
@@ -61,15 +62,15 @@ export default function Home() {
       {/* Hero: the promise on the left, a live receipt on the right */}
       <section className="container-page grid gap-12 pb-6 pt-10 lg:grid-cols-[1.05fr_0.95fr] lg:items-center lg:gap-16 lg:pt-16">
         <div>
-          <p className="label-mono text-ink-3">Medical fundraising · Across Africa</p>
-          <h1 className="display mt-4 text-[2.7rem] sm:text-[3.9rem] lg:text-[4.6rem]">
+          <p className="rise label-mono text-ink-3">Medical fundraising · Across Africa</p>
+          <h1 className="rise display mt-4 text-[2.7rem] [animation-delay:80ms] sm:text-[3.9rem] lg:text-[4.6rem]">
             Help pay a hospital bill. <span className="mark">Follow every payment.</span>
           </h1>
-          <p className="mt-6 max-w-lg text-[1.1rem] leading-relaxed text-ink-2">
+          <p className="rise mt-6 max-w-lg text-[1.1rem] leading-relaxed text-ink-2 [animation-delay:160ms]">
             On Ireti, donations go only to the hospital that confirmed the bill. Never to the
             family, never to us. Each payment gets a public receipt.
           </p>
-          <div className="mt-8 flex flex-wrap gap-3">
+          <div className="rise mt-8 flex flex-wrap gap-3 [animation-delay:240ms]">
             <Link href="/campaigns" className="btn btn-primary">
               Give to a campaign
             </Link>
@@ -82,7 +83,7 @@ export default function Home() {
           </p>
         </div>
 
-        <div className="relative">
+        <div className="rise relative [animation-delay:200ms]">
           <div className="relative aspect-[5/4] overflow-hidden rounded-[24px] bg-sand lg:aspect-[4/5]">
             <Image
               src={unsplashUrl(photos.motherAndChild.id, 1400)}
@@ -108,7 +109,7 @@ export default function Home() {
 
       {/* Campaigns */}
       <section className="container-page pt-20">
-        <div className="flex flex-wrap items-end justify-between gap-4">
+        <Reveal className="flex flex-wrap items-end justify-between gap-4">
           <div>
             <h2 className="display text-[2.1rem] sm:text-[2.8rem]">Raising now</h2>
             <p className="mt-2 text-ink-2">Each campaign is tied to a bill its hospital has confirmed.</p>
@@ -116,21 +117,27 @@ export default function Home() {
           <Link href="/campaigns" className="font-semibold underline decoration-sun decoration-2 underline-offset-4">
             See all campaigns
           </Link>
-        </div>
-        <Suspense fallback={<div className="mt-8 h-[340px]" />}>
-          <LiveCampaigns />
-        </Suspense>
+        </Reveal>
+        <Reveal delay={120}>
+          <Suspense fallback={<div className="mt-8 h-[340px]" />}>
+            <LiveCampaigns />
+          </Suspense>
+        </Reveal>
       </section>
 
       {/* Journey of one donation */}
       <section id="how-it-works" className="container-page scroll-mt-24 pt-24">
-        <h2 className="display max-w-2xl text-[2.1rem] sm:text-[2.8rem]">
-          The path of one donation, <span className="mark">start to receipt.</span>
-        </h2>
+        <Reveal>
+          <h2 className="display max-w-2xl text-[2.1rem] sm:text-[2.8rem]">
+            The path of one donation, <span className="mark">start to receipt.</span>
+          </h2>
+        </Reveal>
         <ol className="mt-12 grid md:grid-cols-4">
           {journey.map((s, i) => (
-            <li
+            <Reveal
+              as="li"
               key={s.title}
+              delay={i * 120}
               className="relative border-l-2 border-indigo pb-10 pl-7 last:pb-0 md:border-l-0 md:border-t-2 md:pb-0 md:pl-0 md:pr-8 md:pt-8"
             >
               <span className="absolute -left-[9px] top-0 h-4 w-4 rounded-full bg-sun ring-4 ring-paper md:-top-[9px] md:left-0" aria-hidden="true" />
@@ -139,25 +146,29 @@ export default function Home() {
               </p>
               <h3 className="mt-2 text-[1.3rem] tracking-[-0.02em]">{s.title}</h3>
               <p className="mt-2 text-[0.97rem] text-ink-2">{s.body}</p>
-            </li>
+            </Reveal>
           ))}
         </ol>
       </section>
 
       {/* Proof, with live data */}
       <section className="container-page pt-24">
-        <h2 className="display max-w-2xl text-[2.1rem] sm:text-[2.8rem]">
-          Don&apos;t take our word for it. <span className="mark">Check.</span>
-        </h2>
-        <Suspense fallback={<div className="mt-10 h-[420px]" />}>
-          <Proof />
-        </Suspense>
+        <Reveal>
+          <h2 className="display max-w-2xl text-[2.1rem] sm:text-[2.8rem]">
+            Don&apos;t take our word for it. <span className="mark">Check.</span>
+          </h2>
+        </Reveal>
+        <Reveal delay={120}>
+          <Suspense fallback={<div className="mt-10 h-[420px]" />}>
+            <Proof />
+          </Suspense>
+        </Reveal>
       </section>
 
       {/* Hospitals */}
       <section className="container-page pt-24">
         <div className="grid items-center gap-10 md:grid-cols-2 md:gap-16">
-          <div className="relative aspect-[4/3] overflow-hidden rounded-[24px] bg-sand">
+          <Reveal className="relative aspect-[4/3] overflow-hidden rounded-[24px] bg-sand">
             <Image
               src={unsplashUrl(photos.surgeon.id, 1200)}
               alt={photos.surgeon.alt}
@@ -165,8 +176,8 @@ export default function Home() {
               className="object-cover object-[50%_22%]"
               sizes="(min-width: 768px) 48vw, 100vw"
             />
-          </div>
-          <div>
+          </Reveal>
+          <Reveal delay={150}>
             <p className="label-mono text-ink-3">For hospitals</p>
             <h2 className="display mt-3 text-[2.1rem] sm:text-[2.8rem]">Fewer unpaid bills, no cash to handle.</h2>
             <ul className="mt-7 divide-y divide-line border-y border-line text-[1.02rem]">
@@ -185,15 +196,17 @@ export default function Home() {
             <Link href="/hospital" className="btn btn-secondary mt-8">
               Hospital sign-in
             </Link>
-          </div>
+          </Reveal>
         </div>
       </section>
 
       {/* FAQ */}
       <section id="faq" className="container-page scroll-mt-24 pt-24">
         <div className="grid gap-10 md:grid-cols-[0.8fr_1.2fr]">
-          <h2 className="display text-[2.1rem] sm:text-[2.8rem]">Common questions</h2>
-          <div className="divide-y divide-line border-y border-line">
+          <Reveal>
+            <h2 className="display text-[2.1rem] sm:text-[2.8rem]">Common questions</h2>
+          </Reveal>
+          <Reveal delay={120} className="divide-y divide-line border-y border-line">
             {faqs.map((f) => (
               <details key={f.q} className="group py-5">
                 <summary className="flex cursor-pointer list-none items-center justify-between gap-6 text-[1.05rem] font-semibold [&::-webkit-details-marker]:hidden">
@@ -205,13 +218,13 @@ export default function Home() {
                 <p className="mt-3 max-w-2xl text-ink-2">{f.a}</p>
               </details>
             ))}
-          </div>
+          </Reveal>
         </div>
       </section>
 
       {/* Closing call */}
       <section className="container-page pt-24">
-        <div className="flex flex-col items-start justify-between gap-8 rounded-[24px] bg-indigo p-8 text-indigo-ink sm:p-12 md:flex-row md:items-center">
+        <Reveal className="flex flex-col items-start justify-between gap-8 rounded-[24px] bg-indigo p-8 text-indigo-ink sm:p-12 md:flex-row md:items-center">
           <div>
             <h2 className="display text-[2rem] sm:text-[2.6rem]">Someone&apos;s bill is waiting.</h2>
             <p className="mt-3 max-w-md text-indigo-muted">
@@ -226,7 +239,7 @@ export default function Home() {
               Start a fundraiser
             </Link>
           </div>
-        </div>
+        </Reveal>
       </section>
     </>
   );
@@ -346,6 +359,12 @@ async function Proof() {
             <dd className="font-[family-name:var(--font-mono)] text-[0.8rem] text-indigo-muted">{snap ? `${formatInt(snap.walletBalanceSats)} sats` : ""}</dd>
           </div>
         </dl>
+        {snap && snap.differenceSats > 0 && (
+          <p className="mt-5 max-w-xl text-[0.9rem] text-indigo-muted">
+            The extra {usd(snap.differenceSats)} is Ireti&apos;s own money kept in the wallet, not donations. The wallet
+            may hold more than campaigns are owed, never less.
+          </p>
+        )}
         <Link href="/transparency" className="mt-8 inline-block font-semibold underline decoration-sun decoration-2 underline-offset-4">
           Open the transparency report
         </Link>

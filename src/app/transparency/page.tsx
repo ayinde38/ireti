@@ -120,7 +120,9 @@ async function Reserves() {
           <dd className={`mt-1 text-[1.8rem] ${latest && latest.differenceSats < 0 ? "text-clay" : ""}`}>
             {latest ? `${latest.differenceSats >= 0 ? "+" : ""}${formatInt(latest.differenceSats)} sats` : "—"}
           </dd>
-          <dd className="text-[0.85rem] text-ink-3">0 or more is good. Rounding can add a few sats.</dd>
+          <dd className="text-[0.85rem] text-ink-3">
+            0 or more is good. Anything above 0 is Ireti&apos;s own money kept in the wallet, not donations.
+          </dd>
         </div>
       </dl>
 

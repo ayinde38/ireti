@@ -1,8 +1,10 @@
+import { BadgeCheckIcon, LockIcon, ShieldCheckIcon, SnowflakeIcon } from "lucide-react";
 import Link from "next/link";
 import { connection } from "next/server";
 import { Suspense } from "react";
 import { StatusPill } from "@/components/status";
 import { isAdmin } from "@/lib/auth";
+import { network } from "@/lib/lightning";
 import { countryName, flag } from "@/lib/countries";
 import { formatDate, formatInt, formatMoney } from "@/lib/format";
 import { store } from "@/lib/store";
@@ -25,12 +27,10 @@ const small = "btn btn-ghost !min-h-9 !py-1.5 text-[0.88rem]";
 async function Admin() {
   await connection();
   if (!(await isAdmin())) {
-    return (
-      <div className="container-page max-w-md py-16">
-        <h1 className="text-[2rem]">Ireti admin</h1>
-        <AdminSignIn demo={process.env.NODE_ENV !== "production" && !process.env.ADMIN_PASSWORD} />
-      </div>
-    );
+    // Shown only on the test network, and only when the deploy opts in.
+    const reviewerPassword =
+      network() === "mutinynet" && process.env.PUBLIC_DEMO_ADMIN === "true" ? process.env.ADMIN_PASSWORD : undefined;
+    return <SignInScreen demo={process.env.NODE_ENV !== "production" && !process.env.ADMIN_PASSWORD} reviewerPassword={reviewerPassword} />;
   }
   const [hospitals, campaigns] = await Promise.all([store.listHospitals(), store.listCampaigns()]);
   const unconfirmed = (await Promise.all(campaigns.map((c) => store.listWithdrawals(c.id))))
@@ -188,4 +188,49 @@ function registrationRows(h: Hospital, contact?: { name: string; role: string | 
 async function hospitalContacts(ids: string[]) {
   const users = ids.length ? await store.listHospitalUsers(ids) : [];
   return new Map(users.map((u) => [u.hospitalId, u]));
+}
+
+const duties = [
+  [BadgeCheckIcon, "Verify hospitals", "Check each licence and call the billing office before a hospital can receive money."],
+  [SnowflakeIcon, "Freeze a campaign", "Stop donations and withdrawals at once if anything looks wrong."],
+  [ShieldCheckIcon, "Check payouts", "Look into any withdrawal the wallet couldn't confirm."],
+] as const;
+
+function SignInScreen({ demo, reviewerPassword }: { demo: boolean; reviewerPassword?: string }) {
+  return (
+    <div className="container-page grid items-center gap-10 py-12 md:grid-cols-2">
+      <div className="max-w-md">
+        <p className="eyebrow">Ireti team</p>
+        <h1 className="mt-3 text-[2.6rem] tracking-[-0.045em]">Admin sign-in</h1>
+        <p className="mt-3 text-ink-2">
+          Review hospital registrations, keep campaigns safe and check payouts. Every action is written to the audit log.
+        </p>
+        <div className="mt-8">
+          <AdminSignIn demo={demo} reviewerPassword={reviewerPassword} />
+        </div>
+      </div>
+      <div className="hidden rounded-[24px] bg-indigo p-9 text-indigo-ink md:block">
+        <span className="flex size-12 items-center justify-center rounded-[14px] bg-white/10 text-sun">
+          <LockIcon className="size-6" aria-hidden="true" />
+        </span>
+        <h2 className="mt-6 text-[1.6rem] tracking-[-0.03em]">What admins look after</h2>
+        <ul className="mt-6 space-y-5">
+          {duties.map(([Icon, t, b]) => (
+            <li key={t} className="flex gap-4">
+              <span className="flex size-10 shrink-0 items-center justify-center rounded-[12px] bg-sun text-ink">
+                <Icon className="size-5" aria-hidden="true" />
+              </span>
+              <span>
+                <strong className="block font-semibold">{t}</strong>
+                <span className="text-[0.95rem] text-indigo-muted">{b}</span>
+              </span>
+            </li>
+          ))}
+        </ul>
+        <p className="mt-8 border-t border-white/10 pt-5 text-[0.88rem] text-indigo-muted">
+          Sign-in attempts are rate limited per connection and overall.
+        </p>
+      </div>
+    </div>
+  );
 }

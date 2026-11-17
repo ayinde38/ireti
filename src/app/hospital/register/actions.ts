@@ -129,16 +129,17 @@ export async function registerHospital(_: RegisterState, form: FormData): Promis
   }
 
   try {
-    const { user } = await store.registerHospital(hospitalFields, {
+    await store.registerHospital(hospitalFields, {
       email,
       name: d.contactName,
       role: d.role,
       accessCodeHash: hashSecret(d.accessCode),
     });
-    await startHospitalSession(user);
   } catch (e) {
     console.error("hospital registration failed", e);
     return { message: "We couldn't save the registration. Please try again.", values };
   }
-  redirect("/hospital");
+  // No session here: registering proves nothing about who is at the keyboard.
+  // The hospital signs in with its email and access code to follow the review.
+  redirect("/hospital/register/submitted");
 }

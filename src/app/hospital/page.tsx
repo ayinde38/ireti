@@ -374,7 +374,7 @@ function SignIn() {
         <div className="mt-8 rounded-[20px] border border-line bg-white p-5">
           <p className="font-medium">New to Ireti?</p>
           <p className="mt-1 text-[0.95rem] text-ink-2">
-            Register your hospital in about five minutes. You can sign in right away and follow the review.
+            Register your hospital in about five minutes, then sign in here to follow the review.
           </p>
           <Link href="/hospital/register" className="btn btn-ghost mt-4">
             Register your hospital

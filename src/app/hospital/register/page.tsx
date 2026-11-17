@@ -70,8 +70,8 @@ function Intro({ resubmit, reason }: { resubmit: boolean; reason?: string | null
         </div>
       ) : (
         <p className="mt-4 text-ink-2">
-          Takes about five minutes. You can sign in straight away and follow the review; families
-          can choose your hospital once Ireti has verified it.
+          Takes about five minutes. Ireti then reviews your hospital, and you can sign in any time to
+          follow the review. Families can choose your hospital once it&apos;s verified.
         </p>
       )}
     </>

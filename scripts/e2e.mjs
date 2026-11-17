@@ -174,8 +174,14 @@ try {
     await page.click("button[type=submit]");
   }
   await fillRegistration(hosp.page);
+  await hosp.page.waitForSelector("text=Your hospital is now being reviewed", { timeout: 15000 });
+  check("registering shows a confirmation and does not sign in", (await hosp.ctx.cookies()).every((c) => c.name !== "ireti_hospital"));
+  await go(hosp.page, "/hospital");
+  await hosp.page.fill("#email", reg.email);
+  await hosp.page.fill("#code", reg.accessCode);
+  await hosp.page.click("button:has-text('Sign in')");
   await hosp.page.waitForSelector("text=We're checking your hospital", { timeout: 15000 });
-  check("hospital registers and is signed in under review", true);
+  check("the hospital signs in and follows the review", true);
   check("unverified hospital sees no bills or money", (await hosp.page.locator("text=Bills waiting for you").count()) === 0);
 
   const other = await session();
